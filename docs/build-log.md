@@ -2,6 +2,13 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-18, prod bootstrap
+
+- Google sign-in confirmed already enabled on the shared project (Jacky's first sign-in just worked).
+- Seeded `hp_config/allowlist` in the Firebase console with Jacky's UID `34R2FXCvosRjLh2jS4twZ9csT492`. First `hp_` collection in the shared database.
+- Added `novara-host.web.app` to Firebase Auth authorized domains ahead of the first deploy.
+- Remaining before host access works in prod: apply the M0 rules block from docs/pending-rules.md through the consumer repo.
+
 ## 2026-08-18, F2 partner directory and emulator harness
 
 - Partner directory CRUD shipped and verified end to end in the browser: create with two contacts, edit, delete, empty and error states.

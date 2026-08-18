@@ -13,7 +13,7 @@ Reminders for whoever writes entries here:
 
 ### M0 host access rules (added 2026-08-18)
 
-Prerequisite, do this first: seed the allowlist document in the Firebase console (console writes bypass rules, which is what makes bootstrapping possible). Firestore data editor, start collection `hp_config`, document ID `allowlist`, one field `uids` of type array containing Jacky's UID string from the app's access screen.
+Prerequisite, done 2026-08-18: `hp_config/allowlist` was seeded in the Firebase console with `uids: ["34R2FXCvosRjLh2jS4twZ9csT492"]` (Jacky's UID). Console writes bypass rules, which is what made bootstrapping possible.
 
 Then paste everything below inside `match /databases/{database}/documents { ... }` in the consumer repo's `firestore.rules`, after the existing consumer blocks, and deploy rules from that repo.
 
