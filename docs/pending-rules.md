@@ -11,7 +11,60 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-Nothing pending.
+### M0 host access rules (added 2026-08-18)
+
+Prerequisite, do this first: seed the allowlist document in the Firebase console (console writes bypass rules, which is what makes bootstrapping possible). Firestore data editor, start collection `hp_config`, document ID `allowlist`, one field `uids` of type array containing Jacky's UID string from the app's access screen.
+
+Then paste everything below inside `match /databases/{database}/documents { ... }` in the consumer repo's `firestore.rules`, after the existing consumer blocks, and deploy rules from that repo.
+
+```
+// Novara host platform (hp_ collections). Hosts only; guests go through
+// the hpGuest* Cloud Functions with the Admin SDK and never hit rules.
+function hpIsHost() {
+  return request.auth != null
+    && request.auth.uid in get(/databases/$(database)/documents/hp_config/allowlist).data.uids;
+}
+
+match /hp_config/{docId} {
+  allow read: if hpIsHost();
+  allow write: if false; // allowlist edits happen in the console in M0
+}
+
+match /hp_orgs/{orgId} {
+  allow read, write: if hpIsHost();
+}
+
+match /hp_events/{eventId} {
+  allow read, write: if hpIsHost();
+
+  match /parties/{partyId} {
+    allow read, write: if hpIsHost();
+  }
+  match /tasks/{taskId} {
+    allow read, write: if hpIsHost();
+  }
+  match /runOfShow/{itemId} {
+    allow read, write: if hpIsHost();
+  }
+  match /log/{entryId} {
+    allow read, write: if hpIsHost();
+  }
+}
+
+match /hp_guestTokens/{tokenId} {
+  allow read, write: if hpIsHost();
+}
+
+match /hp_contacts/{contactId} {
+  allow read, write: if hpIsHost();
+}
+```
+
+Notes:
+
+- `hpIsHost()` does one `get()` per operation, a billed read. Fine at this scale.
+- The subcollection blocks are nested inside `hp_events` on purpose: explicit paths, no collection-group matches.
+- No composite indexes needed yet. First candidates arrive with the task board queries; they will be added here when the queries are written.
 
 ## Applied
 
