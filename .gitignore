@@ -1,0 +1,33 @@
+# Dependencies (restored by `npm install`)
+node_modules/
+functions/node_modules/
+
+# Build output
+dist/
+functions/lib/
+
+# Environment and secrets: never commit keys.
+# Real values live in .env.local; commit a .env.example with blank values instead.
+.env
+.env.local
+.env.*.local
+*serviceAccount*.json
+
+# Firebase local artifacts
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+functions/*.log
+
+# Logs
+npm-debug.log*
+logs/
+*.log
+
+# Editor and OS noise
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/

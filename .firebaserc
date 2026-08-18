@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "novarasocial-dev"
+  },
+  "targets": {
+    "novarasocial-dev": {
+      "hosting": {
+        "novara-host": [
+          "novara-host"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
