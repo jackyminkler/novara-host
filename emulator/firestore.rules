@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// EMULATOR ONLY. This file never deploys anywhere: firebase.json has no
+// firestore section, and the emulator runs against the offline project
+// demo-novara-host. The consumer app repo owns the real ruleset for the
+// shared project. Keep the hp_ blocks below in sync with
+// docs/pending-rules.md, which is the copy Jacky applies for real.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function hpIsHost() {
+      return request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/hp_config/allowlist).data.uids;
+    }
+
+    match /hp_config/{docId} {
+      allow read: if hpIsHost();
+      allow write: if false;
+    }
+
+    match /hp_orgs/{orgId} {
+      allow read, write: if hpIsHost();
+    }
+
+    match /hp_events/{eventId} {
+      allow read, write: if hpIsHost();
+
+      match /parties/{partyId} {
+        allow read, write: if hpIsHost();
+      }
+      match /tasks/{taskId} {
+        allow read, write: if hpIsHost();
+      }
+      match /runOfShow/{itemId} {
+        allow read, write: if hpIsHost();
+      }
+      match /log/{entryId} {
+        allow read, write: if hpIsHost();
+      }
+    }
+
+    match /hp_guestTokens/{tokenId} {
+      allow read, write: if hpIsHost();
+    }
+
+    match /hp_contacts/{contactId} {
+      allow read, write: if hpIsHost();
+    }
+
+    // Mirrors the shared ruleset's default deny for everything unmatched.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

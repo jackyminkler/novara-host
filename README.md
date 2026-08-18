@@ -19,6 +19,17 @@ cp .env.example .env.local   # fill in values, see comments in the file
 npm run dev
 ```
 
+## Local dev with emulators
+
+Fully offline, no contact with the shared project:
+
+```
+npm run emulators
+npm run dev:emu
+```
+
+Sign in with any fake account the auth emulator offers. The gate will show its UID; seed it into the emulator's `hp_config/allowlist` (a REST call with `Authorization: Bearer owner` bypasses rules, or use the Emulator Suite UI). `emulator/firestore.rules` mirrors the pending rules block for local testing and never deploys anywhere.
+
 ## Deploy
 
 Always explicit targets, never a bare `firebase deploy`:

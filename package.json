@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:emu": "VITE_USE_EMULATORS=true vite",
+    "emulators": "firebase emulators:start --config firebase.emulators.json --project demo-novara-host",
     "build": "vite build",
     "preview": "vite preview"
   },

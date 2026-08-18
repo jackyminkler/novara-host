@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
-import { auth, googleProvider, db } from '../lib/firebase.js'
+import { auth, googleProvider, db, useEmulators } from '../lib/firebase.js'
 
 const AuthContext = createContext(null)
 
@@ -46,7 +47,9 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(async () => {
     setSignInError(null)
     try {
-      await signInWithPopup(auth, googleProvider)
+      // Redirect in emulator mode: the embedded test browser blocks popups.
+      const method = useEmulators ? signInWithRedirect : signInWithPopup
+      await method(auth, googleProvider)
     } catch (err) {
       const dismissed =
         err?.code === 'auth/popup-closed-by-user' ||

@@ -2,6 +2,13 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-18, F2 partner directory and emulator harness
+
+- Partner directory CRUD shipped and verified end to end in the browser: create with two contacts, edit, delete, empty and error states.
+- Emulator harness added: `firebase.emulators.json` plus `emulator/firestore.rules`, running against the offline project `demo-novara-host`. The rules file mirrors docs/pending-rules.md so the exact block Jacky applies got tested for real: reads deny before the allowlist doc exists, and a seeded UID unlocks reads and writes. Sign-in uses redirect instead of popup in emulator mode only, because the test browser blocks popups.
+- Deleting an org that is a party on an event will leave a dangling orgId. Allowed in M0 (five known partners, low risk); guest views should render a removed partner gracefully. Revisit at M1.
+- window.confirm for the delete confirmation: boring and fine for M0.
+
 ## 2026-08-18, F1 host shell and auth
 
 - Sign-in account confirmed: jminkler102@gmail.com (PRD section 0, decision 4).
