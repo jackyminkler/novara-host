@@ -52,12 +52,18 @@ function useSplitView(): boolean {
   return useLocation().pathname.startsWith("/app/capture");
 }
 
-/** Collapsed labels become hover tooltips, so the nav stays readable. */
+/**
+ * Collapsed labels become hover tooltips, so the nav stays readable.
+ *
+ * Keyboard focus shows them too, but via :focus-visible rather than
+ * :focus-within. A clicked link keeps focus after the pointer leaves, so
+ * focus-within left the tooltip stranded on screen.
+ */
 function Tooltip({ label }: { label: string }) {
   return (
     <span
       role="tooltip"
-      className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-[10px] py-[5px] text-xs font-medium text-white opacity-0 shadow-[0_4px_14px_rgba(36,31,61,.2)] transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-[10px] py-[5px] text-xs font-medium text-white opacity-0 shadow-[0_4px_14px_rgba(36,31,61,.2)] transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
     >
       {label}
     </span>
