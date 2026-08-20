@@ -2,6 +2,14 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-20, first production deploy
+
+- Deployed `firebase deploy --only functions:hosts,hosting:novara-host`. Live at https://novara-host.web.app. `hpGuestView` and `hpGuestSubmit` created as Node 20 2nd gen functions in us-central1; consumer functions and the other three hosting sites untouched, which is what the explicit targets buy.
+- Smoke tested in production: hosting serves 200, the `/g/:token` deep link serves index.html through the SPA rewrite, and `/api/guest/view` reaches the function unauthenticated and returns `invalid_token` for a bad token. Public invoker was granted without an org policy fight, so guest links work for people with no account.
+- No custom domain yet. `novara-host.web.app` is already in the Auth authorized domains. The wireframes call the eventual address `hosts.novara.social` (plural); confirm the exact subdomain before DNS, because it also has to be added to authorized domains or Google sign-in breaks on it.
+- **Deployed ahead of the second rules block on purpose**, so the URL is live while the consumer repo applies it. Until it lands, templates, calendar away blocks and moments, and crew assignment fail with permission denied. Everything else works. Handoff text for the consumer repo is in `docs/rules-handoff.md`.
+- **Runtime deadline:** the CLI warned that Node 20 was deprecated 2026-04-30 and is decommissioned **2026-10-30**, after which these functions cannot be redeployed without a runtime bump. Roughly two months from this deploy. PRD 3.1 pinned Node 20 to match the consumer functions, so moving to 22 is worth checking against that repo first.
+
 ## 2026-08-19, PRD v2 and the M0 build (F1 to F13)
 
 Inputs: an updated PRD (three principles, F10 to F13, section 4.7) and wireframes v2, which is now the design source of truth at `docs/novara-hosts-wireframes-v2.html`.
