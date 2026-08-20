@@ -1,0 +1,36 @@
+// PRD 4.3. These names are the contract with the Amplitude dashboard; do not
+// rename one without updating the success gate that reads it.
+export type AnalyticsEvent =
+  | 'hp_guest_view_opened'
+  | 'hp_date_response_submitted'
+  | 'hp_task_updated'
+  | 'hp_role_confirmed'
+  | 'hp_capture_created'
+  | 'hp_followup_done'
+  | 'hp_nudge_logged'
+
+const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
+
+// The Amplitude SDK is about 220 kB, which is more than the rest of the guest
+// page put together. It loads on demand instead of in the critical path, so
+// instrumentation never costs a partner their first two seconds on LTE.
+let sdk: Promise<typeof import('@amplitude/analytics-browser')> | null = null
+
+function load() {
+  if (!sdk) {
+    sdk = import('@amplitude/analytics-browser').then((amplitude) => {
+      amplitude.init(apiKey as string, { autocapture: false })
+      return amplitude
+    })
+  }
+  return sdk
+}
+
+/** No-ops without an API key, so local dev works before Amplitude is wired up. */
+export function track(name: AnalyticsEvent, props?: Record<string, unknown>): void {
+  if (!apiKey) return
+  // Fire and forget. A dropped analytics call must never break a guest action.
+  void load()
+    .then((amplitude) => amplitude.track(name, props))
+    .catch(() => undefined)
+}

@@ -31,3 +31,6 @@ logs/
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# Seed content is the host's own data, never committed.
+seed/content.json

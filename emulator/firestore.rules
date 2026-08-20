@@ -34,9 +34,24 @@ service cloud.firestore {
       match /runOfShow/{itemId} {
         allow read, write: if hpIsHost();
       }
+      match /crew/{crewId} {
+        allow read, write: if hpIsHost();
+      }
       match /log/{entryId} {
         allow read, write: if hpIsHost();
       }
+    }
+
+    match /hp_templates/{templateId} {
+      allow read, write: if hpIsHost();
+    }
+
+    match /hp_availability/{blockId} {
+      allow read, write: if hpIsHost();
+    }
+
+    match /hp_moments/{momentId} {
+      allow read, write: if hpIsHost();
     }
 
     match /hp_guestTokens/{tokenId} {

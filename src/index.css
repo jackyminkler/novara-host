@@ -1,26 +1,75 @@
 @import "tailwindcss";
 
+/* Design system A.1, locked August 19, 2026. Source of truth for these values
+   is docs/novara-hosts-wireframes-v2.html. Never hardcode a hex in a component. */
 @theme {
-  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  --color-canvas: #fafafe;
-  --color-ink: #1a1a2e;
-  --color-violet-accent: #7b5aff;
-  --color-magenta-accent: #c45adb;
-  --color-coral-accent: #ff6b8a;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces */
+  --color-field: #f8f7fc;
+  --color-surface: #ffffff;
+  --color-line: #e9e7f0;
+  --color-hair: #f0eff5;
+  --color-well: #fbfafe;
+
+  /* Text */
+  --color-ink: #241f3d;
+  --color-body: #514d6b;
+  --color-sec: #6b6880;
+  --color-mut: #8d8a9e;
+  --color-faint: #cfcdda;
+
+  /* Violet carries meaning, never decoration */
+  --color-vio: #4f3bc9;
+  --color-viot: #ede8fc;
+  --color-viots: #f5f2fe;
+  --color-violine: #dcd3f8;
+  --color-viodash: #8f7be8;
+  --color-av: #e4ddfa;
+
+  /* Semantic pairs: soft fill, readable ink */
+  --color-grn: #e2efe5;
+  --color-grnk: #2f6c46;
+  --color-rose: #f6e8e8;
+  --color-rosek: #a0403c;
+  --color-amb: #f7e7c6;
+  --color-ambk: #7a5510;
+  --color-ambfill: #fff7e8;
+  --color-ambline: #f0dfb6;
 }
 
 @layer base {
   body {
-    @apply bg-canvas font-sans text-ink antialiased;
+    @apply bg-field font-sans text-ink antialiased;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* Native controls inherit the system rather than the browser default. */
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
   }
 }
 
-/* Primary actions and accents only, per design tokens. */
+/* The gradient appears only on primary action buttons. */
 @utility accent-gradient {
-  background-image: linear-gradient(
-    135deg,
-    var(--color-violet-accent),
-    var(--color-magenta-accent),
-    var(--color-coral-accent)
-  );
+  background-image: linear-gradient(135deg, #6c4ff0, #bb4fd4);
+}
+
+/* The one focus treatment used across the app: violet hairline plus tint halo. */
+@utility ring-focus {
+  border-color: #6c4ff0;
+  box-shadow: 0 0 0 3px var(--color-viot);
+}
+
+/* Hairline borders read as 0.5px in the design; browsers round up, so this
+   keeps them visually light at any device pixel ratio. */
+@utility hairline {
+  border-width: 0.5px;
+  border-style: solid;
 }

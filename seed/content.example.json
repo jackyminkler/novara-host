@@ -1,0 +1,47 @@
+{
+  "_readme": [
+    "Copy this file to seed/content.json and replace it with your real content.",
+    "seed/content.json is gitignored on purpose: templates, partners, and names",
+    "are your data, never application code (PRD build guardrail 6).",
+    "",
+    "ownerUid is the host UID that owns these documents. It must already be in",
+    "hp_config/allowlist or the host app will not show them.",
+    "",
+    "Task offsets are days relative to the event: -35 means 35 days before,",
+    "2 means two days after. Run of show offsets are minutes from the start.",
+    "ownerSlot is either 'host', 'all', or the exact name of a role slot."
+  ],
+  "ownerUid": "REPLACE_WITH_HOST_UID",
+  "templates": [
+    {
+      "name": "Example morning run",
+      "description": "Replace this with one of your real playbooks.",
+      "roleSlots": [
+        { "slot": "Presenting partner", "orgType": "activation", "required": true },
+        { "slot": "Coffee vendor", "orgType": "vendor", "required": true }
+      ],
+      "taskSkeleton": [
+        { "title": "Date options out to all parties", "ownerSlot": "host", "offsetDays": -35 },
+        { "title": "Event page live", "ownerSlot": "host", "offsetDays": -21 },
+        { "title": "Recap out to every party", "ownerSlot": "host", "offsetDays": 2 }
+      ],
+      "runOfShowSkeleton": [
+        { "offsetMinutes": -45, "title": "Host arrives, signage up", "ownerSlot": "host" },
+        { "offsetMinutes": 0, "title": "Run start", "ownerSlot": "all" }
+      ],
+      "defaults": { "capacityTarget": 80, "durationMinutes": 150, "startTime": "07:00" }
+    }
+  ],
+  "orgs": [
+    {
+      "name": "Example Partner",
+      "type": "vendor",
+      "description": "One line about what they do.",
+      "contacts": [{ "name": "Their name", "role": "Owner", "email": "them@example.com" }],
+      "profile": { "rate": "Market rate", "terms": "What they need from you" },
+      "via": "How you met",
+      "relationshipTerms": "Private note about the arrangement",
+      "notes": "Lead times, preferences, anything worth remembering"
+    }
+  ]
+}

@@ -1,11 +1,7 @@
-import { AuthProvider, useAuth } from './AuthProvider.jsx'
-import SignInPage from './SignInPage.jsx'
-import HostShell from './HostShell.jsx'
-import {
-  AccessDeniedScreen,
-  AccessErrorScreen,
-  Splash,
-} from './AccessScreens.jsx'
+import { AuthProvider, useAuth } from './AuthProvider'
+import SignInPage from './SignInPage'
+import HostShell from './HostShell'
+import { AccessDeniedScreen, AccessErrorScreen, Splash } from './AccessScreens'
 
 function HostGate() {
   const { access } = useAuth()

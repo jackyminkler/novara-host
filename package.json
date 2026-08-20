@@ -8,7 +8,9 @@
     "dev:emu": "VITE_USE_EMULATORS=true vite",
     "emulators": "firebase emulators:start --config firebase.emulators.json --project demo-novara-host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:mock": "VITE_DATA_MODE=mock vite",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@amplitude/analytics-browser": "^2.45.6",
@@ -20,8 +22,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.5",
+    "firebase-admin": "^14.3.0",
     "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
     "vite": "^8.2.1"
   }
 }
