@@ -1,4 +1,10 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import {
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import {
   CalendarDays,
   ChevronsLeft,
@@ -8,42 +14,42 @@ import {
   NotebookPen,
   Sparkles,
   Users,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import { useAuth, useHost } from './AuthProvider'
-import { useSidebar, type SidebarState } from './useSidebar'
-import { Wordmark } from './Wordmark'
-import { cx } from '../ui/primitives'
-import { initials } from '../data/profiles'
-import TodayPage from './pages/TodayPage'
-import EventsPage from './pages/EventsPage'
-import EventWorkspace from './event/EventWorkspace'
-import NewEventPage from './pages/NewEventPage'
-import CalendarPage from './pages/CalendarPage'
-import PartnersPage from './pages/PartnersPage'
-import PartnerDetailPage from './pages/PartnerDetailPage'
-import PartnerFormPage from './pages/PartnerFormPage'
-import CapturePage from './pages/CapturePage'
-import RecapEditorPage from './event/RecapEditorPage'
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { useAuth, useHost } from "./AuthProvider";
+import { useSidebar, type SidebarState } from "./useSidebar";
+import { Wordmark } from "./Wordmark";
+import { cx } from "../ui/primitives";
+import { initials } from "../data/profiles";
+import TodayPage from "./pages/TodayPage";
+import EventsPage from "./pages/EventsPage";
+import EventWorkspace from "./event/EventWorkspace";
+import NewEventPage from "./pages/NewEventPage";
+import CalendarPage from "./pages/CalendarPage";
+import PartnersPage from "./pages/PartnersPage";
+import PartnerDetailPage from "./pages/PartnerDetailPage";
+import PartnerFormPage from "./pages/PartnerFormPage";
+import CapturePage from "./pages/CapturePage";
+import RecapEditorPage from "./event/RecapEditorPage";
 
 interface NavItem {
-  to: string
-  label: string
-  icon: LucideIcon
-  end?: boolean
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { to: '/app', label: 'Today', icon: House, end: true },
-  { to: '/app/events', label: 'Events', icon: Sparkles },
-  { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-  { to: '/app/partners', label: 'Partners', icon: Users },
-  { to: '/app/capture', label: 'Capture', icon: NotebookPen },
-]
+  { to: "/app", label: "Today", icon: House, end: true },
+  { to: "/app/events", label: "Events", icon: Sparkles },
+  { to: "/app/calendar", label: "Calendar", icon: CalendarDays },
+  { to: "/app/partners", label: "Partners", icon: Users },
+  { to: "/app/capture", label: "Capture", icon: NotebookPen },
+];
 
 /** Capture is the split-view page, so it starts collapsed. */
 function useSplitView(): boolean {
-  return useLocation().pathname.startsWith('/app/capture')
+  return useLocation().pathname.startsWith("/app/capture");
 }
 
 /** Collapsed labels become hover tooltips, so the nav stays readable. */
@@ -55,18 +61,21 @@ function Tooltip({ label }: { label: string }) {
     >
       {label}
     </span>
-  )
+  );
 }
 
-function SideNav({ collapsed, canToggle, onToggle }: SidebarState & { onToggle: () => void }) {
-  const host = useHost()
-  const { signOut } = useAuth()
+function SideNav({
+  collapsed,
+  onToggle,
+}: SidebarState & { onToggle: () => void }) {
+  const host = useHost();
+  const { signOut } = useAuth();
 
   return (
     <nav
       className={cx(
-        'hairline flex shrink-0 flex-col border-0 border-r border-line bg-surface',
-        collapsed ? 'w-[54px] items-center py-[14px]' : 'w-44 px-3 py-4',
+        "hairline flex shrink-0 flex-col border-0 border-r border-line bg-surface",
+        collapsed ? "w-[54px] items-center py-[14px]" : "w-44 px-3 py-4",
       )}
     >
       {collapsed ? (
@@ -80,18 +89,20 @@ function SideNav({ collapsed, canToggle, onToggle }: SidebarState & { onToggle: 
       )}
 
       {NAV.map(({ to, label, icon: Icon, end }) => (
-        <div key={to} className={cx('group relative', !collapsed && 'w-full')}>
+        <div key={to} className={cx("group relative", !collapsed && "w-full")}>
           <NavLink
             to={to}
             end={end}
             aria-label={label}
             className={({ isActive }) =>
               cx(
-                'flex items-center rounded-[9px] transition',
+                "flex items-center rounded-[9px] transition",
                 collapsed
-                  ? 'size-[34px] justify-center'
-                  : 'mb-[2px] w-full gap-[9px] px-[10px] py-[7px] text-[13px]',
-                isActive ? 'bg-viot font-medium text-vio' : 'text-sec hover:text-ink',
+                  ? "size-[34px] justify-center"
+                  : "mb-[2px] w-full gap-[9px] px-[10px] py-[7px] text-[13px]",
+                isActive
+                  ? "bg-viot font-medium text-vio"
+                  : "text-sec hover:text-ink",
               )
             }
           >
@@ -102,23 +113,32 @@ function SideNav({ collapsed, canToggle, onToggle }: SidebarState & { onToggle: 
         </div>
       ))}
 
-      <div className={cx('mt-auto flex flex-col', collapsed ? 'items-center gap-2' : 'w-full gap-3')}>
-        {canToggle && (
-          <div className="group relative">
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-              className={cx(
-                'hairline flex items-center justify-center rounded-[9px] border-line text-sec transition hover:text-ink',
-                collapsed ? 'size-[34px]' : 'ml-auto size-[30px]',
-              )}
-            >
-              {collapsed ? <ChevronsRight size={15} /> : <ChevronsLeft size={15} />}
-            </button>
-            {collapsed && <Tooltip label="Expand" />}
-          </div>
+      <div
+        className={cx(
+          "mt-auto flex flex-col",
+          collapsed ? "items-center gap-2" : "w-full gap-3",
         )}
+      >
+        <div className="group relative">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={
+              collapsed ? "Expand the sidebar" : "Collapse the sidebar"
+            }
+            className={cx(
+              "hairline flex items-center justify-center rounded-[9px] border-line text-sec transition hover:text-ink",
+              collapsed ? "size-[34px]" : "ml-auto size-[30px]",
+            )}
+          >
+            {collapsed ? (
+              <ChevronsRight size={15} />
+            ) : (
+              <ChevronsLeft size={15} />
+            )}
+          </button>
+          {collapsed && <Tooltip label="Expand" />}
+        </div>
 
         {collapsed ? (
           <div className="group relative">
@@ -133,8 +153,12 @@ function SideNav({ collapsed, canToggle, onToggle }: SidebarState & { onToggle: 
               {initials(host.displayName)}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium">{host.displayName}</span>
-              <span className="block truncate text-[11px] text-mut">{host.email}</span>
+              <span className="block truncate text-xs font-medium">
+                {host.displayName}
+              </span>
+              <span className="block truncate text-[11px] text-mut">
+                {host.email}
+              </span>
             </span>
             <button
               onClick={signOut}
@@ -147,12 +171,12 @@ function SideNav({ collapsed, canToggle, onToggle }: SidebarState & { onToggle: 
         )}
       </div>
     </nav>
-  )
+  );
 }
 
 export default function HostShell() {
-  const splitView = useSplitView()
-  const sidebar = useSidebar(splitView)
+  const splitView = useSplitView();
+  const sidebar = useSidebar(splitView);
 
   return (
     <div className="flex min-h-screen bg-field">
@@ -171,10 +195,13 @@ export default function HostShell() {
           <Route path="partners/:orgId" element={<PartnerDetailPage />} />
           <Route path="capture" element={<CapturePage />} />
           {/* PRD 3.4 called this orgs; the wireframes call it partners. */}
-          <Route path="orgs" element={<Navigate to="/app/partners" replace />} />
+          <Route
+            path="orgs"
+            element={<Navigate to="/app/partners" replace />}
+          />
           <Route path="*" element={<Navigate to="/app" replace />} />
         </Routes>
       </main>
     </div>
-  )
+  );
 }

@@ -40,7 +40,7 @@ Tokens live in `src/index.css` as CSS variables and Tailwind theme colors. Never
 - Icons: Lucide only.
 - Borders are hairlines (0.5px), radii 8 to 13px, shadows barely there.
 - Layout templates: overview stack, full-width collection, tabbed workspace, canvas, split, focus column, bare guest column.
-- The sidebar collapses to an icon rail everywhere, not just on split pages. The chevron control sits at its foot in both states, the choice persists per user in localStorage, split-view pages default to collapsed, and below 900 px the app collapses on its own and hides the toggle. Collapsed labels become hover and focus tooltips.
+- The sidebar collapses to an icon rail everywhere, not just on split pages. The chevron control sits at its foot in both states, the choice persists per user in localStorage, split-view pages default to collapsed, and below 900 px it collapses on its own. The toggle stays available at every width; a narrow window can still be opened, but that choice lasts the session rather than persisting. Collapsed labels become hover and focus tooltips.
 - Guest and recap routes are mobile-first at 390 px and must load in under two seconds on LTE. Host routes are desktop-comfortable.
 
 ## Stack
