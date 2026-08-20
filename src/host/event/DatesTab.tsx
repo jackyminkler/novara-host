@@ -16,8 +16,27 @@ import { track } from '../../lib/analytics'
 let optionSeq = 0
 const nextOptionId = () => `opt-${Date.now().toString(36)}-${(optionSeq += 1)}`
 
+interface EditingCell {
+  partyId: string
+  optionId: string
+  /** Viewport rect of the chip that opened the panel. */
+  rect: DOMRect
+}
+
 function yesCount(parties: Party[], optionId: string): number {
   return parties.filter((p) => p.dateResponses[optionId]?.value === 'yes').length
+}
+
+function recordTitle(
+  editing: EditingCell,
+  parties: Party[],
+  orgs: { id: string; name: string }[],
+  options: DateOption[],
+): string {
+  const party = parties.find((p) => p.id === editing.partyId)
+  const name = orgs.find((o) => o.id === party?.orgId)?.name ?? 'Partner'
+  const option = options.find((o) => o.id === editing.optionId)
+  return `${name}, ${option ? formatDayOnly(option.startsAt) : ''}`
 }
 
 export default function DatesTab() {
@@ -25,7 +44,7 @@ export default function DatesTab() {
   const { event, parties, orgs } = bundle
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
-  const [editing, setEditing] = useState<{ partyId: string; optionId: string } | null>(null)
+  const [editing, setEditing] = useState<EditingCell | null>(null)
 
   // Away blocks are the host's own calendar, so a conflict warning needs them.
   const { data: availability } = useAsync((api) => api.listAvailability(), [])
@@ -100,78 +119,117 @@ export default function DatesTab() {
     .sort((a, b) => b.yes - a.yes)
   const leading = scored[0]
 
-  const columns = `minmax(140px,1.5fr) repeat(${event.dateOptions.length},minmax(84px,1fr))`
+  const constraints = parties
+    .filter((p) => p.constraintNote)
+    .map((p) => ({
+      id: p.id,
+      name: orgs.find((o) => o.id === p.orgId)?.name ?? 'A partner',
+      note: p.constraintNote,
+    }))
+
+  // The first column is sticky, so the party stays readable while the date
+  // columns scroll sideways on a narrow screen.
+  const columns = `minmax(160px,2fr) repeat(${event.dateOptions.length},minmax(84px,1fr))`
+  const cellBorder = 'border-t border-hair'
+  const stickyCell =
+    'sticky left-0 z-10 bg-surface shadow-[1px_0_0_0_var(--color-hair)]'
 
   return (
     <>
-      <div className="overflow-x-auto pb-1">
-        <div className="min-w-[420px]">
-          <div className="grid gap-[6px] text-[11.5px] text-mut" style={{ gridTemplateColumns: columns }}>
-            <div />
-            {event.dateOptions.map((option) => (
-              <OptionHead
-                key={option.id}
-                option={option}
-                availability={availability ?? []}
-                onRemove={() => removeOption(option.id)}
-              />
-            ))}
-          </div>
+      <Card className="!p-0">
+        <div className="overflow-x-auto rounded-[13px]">
+          <div className="min-w-[420px]">
+            <div
+              className="grid gap-[6px] text-[11.5px] text-mut"
+              style={{ gridTemplateColumns: columns }}
+            >
+              <div className={`${stickyCell} pl-[18px]`} />
+              {event.dateOptions.map((option, index) => (
+                <OptionHead
+                  key={option.id}
+                  option={option}
+                  availability={availability ?? []}
+                  onRemove={() => removeOption(option.id)}
+                  className={index === event.dateOptions.length - 1 ? 'pr-[18px]' : undefined}
+                />
+              ))}
+            </div>
 
-          {parties.length === 0 && (
-            <p className="border-t border-hair py-4 text-[12.5px] text-mut">
-              No partners on this event. Pick whichever date suits you and confirm it.
-            </p>
-          )}
+            {parties.length === 0 && (
+              <p className={`${cellBorder} px-[18px] py-4 text-[12.5px] text-mut`}>
+                No partners on this event. Pick whichever date suits you and confirm it.
+              </p>
+            )}
 
-          {parties.map((party) => {
-            const org = orgs.find((o) => o.id === party.orgId)
-            const silent = Object.keys(party.dateResponses).length === 0
-            return (
-              <div key={party.id}>
+            {parties.map((party) => {
+              const org = orgs.find((o) => o.id === party.orgId)
+              const silent = Object.keys(party.dateResponses).length === 0
+              return (
                 <div
-                  className="grid items-center gap-[6px] border-t border-hair py-[7px] text-[12.5px]"
+                  key={party.id}
+                  className="grid items-center gap-[6px] text-[12.5px]"
                   style={{ gridTemplateColumns: columns }}
                 >
-                  <span className="flex min-w-0 items-center gap-[6px]">
+                  <span
+                    className={`${stickyCell} ${cellBorder} flex min-w-0 items-center gap-[6px] py-[7px] pl-[18px] pr-2`}
+                  >
                     <span className="truncate">{org?.name ?? 'Removed partner'}</span>
                     {silent && <Chip tone="rose">Awaiting</Chip>}
                   </span>
-                  {event.dateOptions.map((option) => (
-                    <span key={option.id} className="relative mx-auto">
+                  {event.dateOptions.map((option, index) => (
+                    <span
+                      key={option.id}
+                      className={`${cellBorder} flex justify-center py-[7px] ${
+                        index === event.dateOptions.length - 1 ? 'pr-[18px]' : ''
+                      }`}
+                    >
                       <ResponseCell
                         response={party.dateResponses[option.id]}
-                        onClick={() => setEditing({ partyId: party.id, optionId: option.id })}
+                        onOpen={(rect) =>
+                          setEditing({ partyId: party.id, optionId: option.id, rect })
+                        }
                         partyName={org?.name ?? 'this partner'}
                         optionLabel={formatDayOnly(option.startsAt)}
                       />
-                      {editing?.partyId === party.id && editing.optionId === option.id && (
-                        <RecordPopover
-                          title={`${org?.name ?? 'Partner'}, ${formatDayOnly(option.startsAt)}`}
-                          current={party.dateResponses[option.id]?.value}
-                          onClose={() => setEditing(null)}
-                          onPick={(value, note) => {
-                            run((api) =>
-                              api.setDateResponse(event.id, party.id, option.id, value, 'host', note),
-                            )
-                            track('hp_date_response_submitted', { eventId: event.id, source: 'host' })
-                            setEditing(null)
-                          }}
-                        />
-                      )}
                     </span>
                   ))}
                 </div>
-                {party.constraintNote && (
-                  <p className="pb-[6px] text-[11.5px] text-mut">
-                    {org?.name}: {party.constraintNote}
-                  </p>
-                )}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </Card>
+
+      {/* Constraints live below the matrix, not between its rows: they are full
+          sentences, and inside a sideways scroller they would slide out from
+          under the party name that is pinned in place. */}
+      {constraints.length > 0 && (
+        <div className="mt-[10px] space-y-1">
+          {constraints.map(({ id, name, note }) => (
+            <p key={id} className="text-[11.5px] text-mut">
+              <span className="font-medium">{name}:</span> {note}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {editing && (
+        <RecordPopover
+          anchor={editing.rect}
+          title={recordTitle(editing, parties, orgs, event.dateOptions)}
+          current={
+            parties.find((p) => p.id === editing.partyId)?.dateResponses[editing.optionId]?.value
+          }
+          onClose={() => setEditing(null)}
+          onPick={(value, note) => {
+            run((api) =>
+              api.setDateResponse(event.id, editing.partyId, editing.optionId, value, 'host', note),
+            )
+            track('hp_date_response_submitted', { eventId: event.id, source: 'host' })
+            setEditing(null)
+          }}
+        />
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button onClick={() => confirm(leading.option.id)}>
@@ -228,20 +286,22 @@ function ProvenanceDot() {
 
 function ResponseCell({
   response,
-  onClick,
+  onOpen,
   partyName,
   optionLabel,
 }: {
   response: Party['dateResponses'][string] | undefined
-  onClick: () => void
+  onOpen: (rect: DOMRect) => void
   partyName: string
   optionLabel: string
 }) {
   const label = `Record ${partyName} for ${optionLabel}`
+  const open = (e: React.MouseEvent<HTMLButtonElement>) =>
+    onOpen(e.currentTarget.getBoundingClientRect())
 
   if (!response) {
     return (
-      <button type="button" onClick={onClick} aria-label={label}>
+      <button type="button" onClick={open} aria-label={label}>
         <Chip tone="gray">?</Chip>
       </button>
     )
@@ -249,7 +309,7 @@ function ResponseCell({
 
   const tone = response.value === 'yes' ? 'grn' : response.value === 'no' ? 'rose' : 'gray'
   return (
-    <button type="button" onClick={onClick} aria-label={label}>
+    <button type="button" onClick={open} aria-label={label}>
       <Chip tone={tone}>
         {response.value === 'yes' && <Check size={12} />}
         {response.value === 'no' && <X size={12} />}
@@ -265,16 +325,18 @@ function RecordPopover({
   current,
   onPick,
   onClose,
+  anchor,
 }: {
   title: string
   current: ResponseValue | undefined
   onPick: (value: ResponseValue, note: string) => void
   onClose: () => void
+  anchor: DOMRect
 }) {
   const [note, setNote] = useState('')
 
   return (
-    <Popover onClose={onClose} className="w-60">
+    <Popover onClose={onClose} anchor={anchor} className="w-60">
       <p className="mb-[6px] text-xs font-semibold">{title}</p>
       <div className="mb-2 flex gap-[6px]">
         {(['yes', 'maybe', 'no'] as ResponseValue[]).map((value) => (
@@ -308,17 +370,19 @@ function OptionHead({
   option,
   availability,
   onRemove,
+  className,
 }: {
   option: DateOption
   availability: { kind: 'away' | 'open'; startDate: string; endDate: string; label: string }[]
   onRemove: () => void
+  className?: string
 }) {
   const holiday = holidayOn(option.startsAt)
   const away = awayConflict(option.startsAt, availability)
   const date = new Date(option.startsAt)
 
   return (
-    <div className="group px-1 text-center">
+    <div className={cx('group px-1 pt-1 text-center', className)}>
       <span className="block">{formatDayOnly(option.startsAt)}</span>
       <span className="block text-[11px]">{formatTime(date)}</span>
       {(holiday || away) && (
