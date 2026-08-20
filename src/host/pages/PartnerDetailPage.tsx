@@ -128,8 +128,7 @@ export default function PartnerDetailPage() {
               {note}
               {event.confirmedDateOptionId && (
                 <span className="text-mut">
-                  {' '}
-                  ,{' '}
+                  {', '}
                   {formatShort(
                     event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)?.startsAt ?? '',
                   )}
