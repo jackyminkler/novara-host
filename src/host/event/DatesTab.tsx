@@ -127,12 +127,11 @@ export default function DatesTab() {
       note: p.constraintNote,
     }))
 
-  // The first column is sticky, so the party stays readable while the date
-  // columns scroll sideways on a narrow screen.
+  // Narrow screens scroll the whole matrix sideways as one piece. Nothing is
+  // pinned: the rows are few and short, so a locked column costs more than the
+  // context it buys.
   const columns = `minmax(160px,2fr) repeat(${event.dateOptions.length},minmax(84px,1fr))`
   const cellBorder = 'border-t border-hair'
-  const stickyCell =
-    'sticky left-0 z-10 bg-surface shadow-[1px_0_0_0_var(--color-hair)]'
 
   return (
     <>
@@ -143,7 +142,7 @@ export default function DatesTab() {
               className="grid gap-[6px] text-[11.5px] text-mut"
               style={{ gridTemplateColumns: columns }}
             >
-              <div className={`${stickyCell} pl-[18px]`} />
+              <div className="pl-[18px]" />
               {event.dateOptions.map((option, index) => (
                 <OptionHead
                   key={option.id}
@@ -171,7 +170,7 @@ export default function DatesTab() {
                   style={{ gridTemplateColumns: columns }}
                 >
                   <span
-                    className={`${stickyCell} ${cellBorder} flex min-w-0 items-center gap-[6px] py-[7px] pl-[18px] pr-2`}
+                    className={`${cellBorder} flex min-w-0 items-center gap-[6px] py-[7px] pl-[18px] pr-2`}
                   >
                     <span className="truncate">{org?.name ?? 'Removed partner'}</span>
                     {silent && <Chip tone="rose">Awaiting</Chip>}
