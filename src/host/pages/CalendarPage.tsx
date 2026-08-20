@@ -134,9 +134,14 @@ export default function CalendarPage() {
           )}
 
           <Card className="overflow-hidden !p-0">
+            {/* A proper band: the labels sit centred in it rather than crowding
+                the top edge of the card. */}
             <div className="grid grid-cols-7">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day} className="px-[7px] py-[6px] text-[11px] text-mut">
+                <div
+                  key={day}
+                  className="flex h-10 items-center px-[14px] text-[11px] font-medium text-mut"
+                >
                   {day}
                 </div>
               ))}
@@ -154,14 +159,17 @@ export default function CalendarPage() {
                   <div
                     key={key}
                     className={cx(
-                      'min-h-[62px] border-t border-hair px-[7px] py-[5px] text-[11px]',
+                      'min-h-[78px] border-t border-hair px-[9px] pb-[10px] pt-[6px] text-[11px]',
                       outside ? 'text-faint' : 'text-body',
                       open && !outside && 'bg-viots/60',
                     )}
                   >
+                    {/* Every date sits in the same sized box, so the today
+                        marker cannot nudge its number out of line. */}
                     <span
                       className={cx(
-                        key === todayKey && 'rounded-full bg-vio px-[5px] py-[1px] font-medium text-white',
+                        'inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-[5px]',
+                        key === todayKey && 'bg-vio font-medium text-white',
                       )}
                     >
                       {day.getDate()}
@@ -199,7 +207,7 @@ export default function CalendarPage() {
             </div>
           </Card>
 
-          <div className="mt-[10px] flex flex-wrap items-center gap-4 text-[11px] text-sec">
+          <div className="mt-4 flex flex-wrap items-center gap-4 pb-2 text-[11px] text-sec">
             <span className="flex items-center gap-[6px]">
               <span className="inline-block size-[10px] rounded-[3px] bg-vio" /> Confirmed
             </span>
