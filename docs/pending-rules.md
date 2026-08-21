@@ -11,9 +11,15 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-### M0 v2 collections, F10 to F13 (added 2026-08-19) — NOT YET APPLIED
+Nothing pending.
 
-Verified still missing from the deployed ruleset on 2026-08-20. Until this lands, a production build signs in and runs events, dates, parties, tasks, run of show, and capture, but templates, the calendar's away blocks and moments, and crew assignment all fail with permission denied.
+## Applied
+
+### M0 v2 collections, F10 to F13
+
+Applied 2026-08-20 through the consumer repo, verified the same day by reading the deployed ruleset back from the project. `hp_templates`, `hp_availability`, and `hp_moments` are live as top-level blocks, and `crew` is nested inside `hp_events` alongside `parties`, `tasks`, `runOfShow`, and `log`, exactly as asked. No collection-group rule was introduced, and nothing outside the `hp_` section changed.
+
+<details><summary>The block as applied</summary>
 
 The v2 PRD adds templates (F3), host availability and citywide moments (F10), and crew (F13). Crew is a subcollection of `hp_events`, so it needs a nested match block, never a collection-group rule. Paste these **alongside** the M0 host access rules above, and add the `crew` block inside the existing `match /hp_events/{eventId}` block.
 
@@ -45,7 +51,7 @@ Notes:
 - Every subcollection read is a full small collection sorted in memory, deliberately, so no ordering index is required.
 - `hp_guestTokens` documents now carry `scope` (`party` | `crew` | `recap`) and `subjectId` instead of a bare `partyId`. Same collection, same rules block, no change needed to the block already pending above.
 
-## Applied
+</details>
 
 ### M0 host access rules
 

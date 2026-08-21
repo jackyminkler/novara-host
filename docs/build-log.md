@@ -2,6 +2,12 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-20, F10 to F13 rules applied, M0 fully live
+
+- The second rules block went in through the consumer repo. Verified by reading the deployed ruleset back: `hp_templates`, `hp_availability`, and `hp_moments` are live, and `crew` is correctly nested inside `hp_events` rather than added as a collection-group rule. Nothing outside the `hp_` section changed. `docs/pending-rules.md` now has an empty Pending section for the first time.
+- No redeploy was needed. Rules take effect immediately, and every commit after the deploy was documentation only, so the build at https://novara-host.web.app already matches main.
+- M0 is now fully functional in production: templates, calendar away blocks and citywide moments, and crew assignment all have their rules.
+
 ## 2026-08-20, first production deploy
 
 - Deployed `firebase deploy --only functions:hosts,hosting:novara-host`. Live at https://novara-host.web.app. `hpGuestView` and `hpGuestSubmit` created as Node 20 2nd gen functions in us-central1; consumer functions and the other three hosting sites untouched, which is what the explicit targets buy.
