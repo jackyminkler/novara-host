@@ -2,6 +2,12 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-21, second host added to the allowlist
+
+- Added Lisa Tucker (ltucker1117@gmail.com, UID `Fl7zJ2xfssSyQQ6sMXILesw7N7D2`) to `hp_config/allowlist`, alongside Jacky. Appended rather than replaced, and read back to confirm both UIDs are present: clobbering that array would lock everyone out of the app with no way back in, because `hp_config` is `allow write: if false` by design.
+- A UID only exists once that person has signed in with Google at least once, so the order is always: they sign in, the denied screen shows them their UID, then it goes on the list. Lisa had already signed in, so hers was available to look up by email.
+- **The allowlist is all or nothing in M0.** Everyone on it can read and write every `hp_` collection: all events, the whole partner directory including the private `via` and `relationshipTerms` notes, and every captured contact. Per-host scoping is M2 (PRD section 6), so there is no way to grant a narrower slice today.
+
 ## 2026-08-20, F10 to F13 rules applied, M0 fully live
 
 - The second rules block went in through the consumer repo. Verified by reading the deployed ruleset back: `hp_templates`, `hp_availability`, and `hp_moments` are live, and `crew` is correctly nested inside `hp_events` rather than added as a collection-group rule. Nothing outside the `hp_` section changed. `docs/pending-rules.md` now has an empty Pending section for the first time.
