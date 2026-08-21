@@ -2,6 +2,14 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-21, sign-in fixed for in-app browsers, and cache headers
+
+A second host opened the link from Messages on iOS and got "Unable to process request due to missing initial state" from the Firebase auth handler. Two causes, both fixed.
+
+- **authDomain was cross-origin.** The app is served from `novara-host.web.app` but `authDomain` was the default `novarasocial-dev.firebaseapp.com`, so sign-in bounced through a third-party origin whose storage the browser partitions. iOS in-app browsers partition aggressively, so the `sessionStorage` the handler wrote was gone on the way back. Firebase Hosting serves `/__/auth/*` on every site (verified 200 on ours, ahead of the SPA catch-all rewrite), so pointing `authDomain` at our own domain makes the whole flow same-origin. Documented in `.env.example` so it survives the next setup. This is per-client config, so the consumer app's own auth is unaffected.
+- **Popups do not exist in an iOS in-app browser.** `signInWithPopup` now falls back to `signInWithRedirect` on `popup-blocked`, `operation-not-supported-in-this-environment`, and `web-storage-unsupported`. That fallback is only safe because of the fix above; with a cross-origin authDomain the redirect is exactly what breaks.
+- **Hosting served `index.html` with `max-age=3600`**, the Firebase default, so a deploy took up to an hour to reach anyone who had already visited. Entry documents are now `no-cache` and the content-hashed `/assets/**` are `immutable` for a year. Paths are listed explicitly rather than using a catch-all so there is no ordering ambiguity between the two rules. Note the CDN keeps serving already-cached copies with the old header until they expire, so the first hour after this change still needs a cache-busting query or a hard refresh.
+
 ## 2026-08-21, second host added to the allowlist
 
 - Added Lisa Tucker (ltucker1117@gmail.com, UID `Fl7zJ2xfssSyQQ6sMXILesw7N7D2`) to `hp_config/allowlist`, alongside Jacky. Appended rather than replaced, and read back to confirm both UIDs are present: clobbering that array would lock everyone out of the app with no way back in, because `hp_config` is `allow write: if false` by design.

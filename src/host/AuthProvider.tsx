@@ -59,6 +59,13 @@ function toIdentity(u: User): HostIdentity {
  * how the whole host app gets verified against the wireframes with nothing
  * running behind it.
  */
+/** Codes that mean "this browser will not give you a popup", not "sign in failed". */
+const POPUP_UNAVAILABLE = new Set([
+  'auth/popup-blocked',
+  'auth/operation-not-supported-in-this-environment',
+  'auth/web-storage-unsupported',
+])
+
 const MOCK_HOST: HostIdentity = {
   uid: 'mock-host-uid',
   displayName: 'Maya Ellison',
@@ -101,12 +108,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSignInError(null)
     try {
       // Redirect in emulator mode: the embedded test browser blocks popups.
-      const method = useEmulators ? signInWithRedirect : signInWithPopup
-      await method(auth, googleProvider)
+      if (useEmulators) {
+        await signInWithRedirect(auth, googleProvider)
+        return
+      }
+      await signInWithPopup(auth, googleProvider)
     } catch (err) {
-      const code = (err as { code?: string })?.code
-      const dismissed = code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'
-      if (!dismissed) setSignInError(code ?? 'unknown')
+      const code = (err as { code?: string })?.code ?? 'unknown'
+
+      // Closing the popup is a decision, not a failure.
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return
+
+      // iOS in-app browsers (a link opened from Messages or Instagram) block
+      // window.open outright, so fall back to a full redirect. That only
+      // survives storage partitioning because authDomain is the same origin
+      // as the app; pointing it at <project>.firebaseapp.com fails here with
+      // "missing initial state".
+      if (POPUP_UNAVAILABLE.has(code)) {
+        try {
+          await signInWithRedirect(auth, googleProvider)
+          return
+        } catch (redirectErr) {
+          setSignInError((redirectErr as { code?: string })?.code ?? 'unknown')
+          return
+        }
+      }
+
+      setSignInError(code)
     }
   }, [])
 
