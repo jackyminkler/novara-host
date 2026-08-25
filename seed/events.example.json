@@ -1,0 +1,48 @@
+{
+  "_readme": [
+    "Copy this file to seed/events.json and replace it with your real events.",
+    "seed/events.json is gitignored on purpose: your events, partners, and the",
+    "people who came are your data, never application code (PRD guardrail 6).",
+    "",
+    "ownerUid is the host UID that owns these events. It must be in hp_config/allowlist.",
+    "",
+    "sourceKey is the stable slug an already-happened event is known by, and it is",
+    "what hp_people registrations join on. Use the same slug the guest export was",
+    "filed under, or the seeder cannot connect the guest list to the event.",
+    "",
+    "parties name orgs by the exact name they carry in hp_orgs. A party whose org",
+    "is not seeded yet is skipped with a warning rather than half written."
+  ],
+  "ownerUid": "REPLACE_WITH_HOST_UID",
+  "hostDisplayName": "Your name",
+  "events": [
+    {
+      "sourceKey": "2026-01-31-example-run",
+      "title": "Example morning run",
+      "status": "wrapped",
+      "description": "One line about what this was.",
+      "startsAt": "2026-01-31T15:00:00.000Z",
+      "dateLabel": "Sat Jan 31, 7:00 am",
+      "location": {
+        "name": "Somewhere in the city",
+        "meetPoint": "Where everyone gathers",
+        "finishPoint": "Where it ends",
+        "notes": "Parking, restrooms, anything worth remembering"
+      },
+      "capacityTarget": 80,
+      "campaignGoal": "What this event was for",
+      "governance": {
+        "officialListing": "Luma",
+        "listingUrl": "https://luma.com/example",
+        "guestContactsOwner": "Who holds the guest list",
+        "dualPosts": ""
+      },
+      "signupCount": 83,
+      "recap": { "headcount": 50, "photosLink": "", "postsRan": "" },
+      "links": [{ "label": "Luma listing", "url": "https://luma.com/example", "status": "final" }],
+      "parties": [
+        { "org": "Example Partner", "role": "cohost", "gives": "What they brought", "gets": "What they got" }
+      ]
+    }
+  ]
+}

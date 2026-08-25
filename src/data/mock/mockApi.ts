@@ -156,6 +156,7 @@ export const mockApi: HostApi = {
     const event: EventDoc = {
       id: eventId,
       ownerUid: uid,
+      sourceKey: null,
       title: input.title,
       status: 'planning',
       description: input.description,

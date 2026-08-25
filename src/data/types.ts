@@ -100,6 +100,15 @@ export interface EventRecap {
 export interface EventDoc {
   id: string
   ownerUid: string
+  /**
+   * Stable slug for an event that already happened elsewhere, matching
+   * `Registration.eventKey`. Null for events created in the app.
+   *
+   * The join runs on this rather than on the document id so the guest importer
+   * stays independent of event creation: slugs are stable, ids are generated,
+   * and an event recreated by hand would otherwise orphan 1,233 registrations.
+   */
+  sourceKey: string | null
   title: string
   status: EventStatus
   description: string

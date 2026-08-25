@@ -179,6 +179,7 @@ export const firebaseApi: HostApi = {
     const templateData = template?.exists() ? withId<Template>(template) : null
 
     const eventRef = await addDoc(collection(db, EVENTS), {
+      sourceKey: null,
       title: input.title,
       status: 'planning',
       description: input.description,

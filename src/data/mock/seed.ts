@@ -254,6 +254,7 @@ export function buildStore(): MockStore {
   const presidio: EventDoc = {
     id: 'presidio-sunrise-five',
     ownerUid: HOST,
+    sourceKey: null,
     title: 'Presidio sunrise five',
     status: 'planning',
     description:
@@ -294,6 +295,7 @@ export function buildStore(): MockStore {
   const marina: EventDoc = {
     id: 'marina-track-social',
     ownerUid: HOST,
+    sourceKey: null,
     title: 'Marina track social',
     status: 'wrapped',
     description:
