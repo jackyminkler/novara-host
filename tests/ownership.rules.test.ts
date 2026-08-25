@@ -32,7 +32,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 const OWNER = 'owner-host-uid'
 const OTHER = 'other-host-uid'
-const STRANGER = 'not-on-the-allowlist'
+const NEWCOMER = 'a-brand-new-account'
 
 /**
  * Every top-level hp_ collection, with a document body good enough to satisfy
@@ -148,32 +148,57 @@ describe('a second allowlisted host', () => {
     )
   })
 
-  it('reads the shared allowlist', async () => {
-    // hp_config keeps the plain host check: the allowlist is shared, not owned.
-    await assertSucceeds(getDoc(doc(asOther(), 'hp_config/allowlist')))
+  it('cannot read the retired allowlist either', async () => {
+    // hp_config used to be readable by any host, because the allowlist was
+    // shared rather than owned. Open signup retired it, and nothing reads it
+    // now, so it is denied to everyone rather than left quietly readable.
+    await assertFails(getDoc(doc(asOther(), 'hp_config/allowlist')))
   })
 })
 
-describe('an account that is not on the allowlist', () => {
-  const asStranger = () => testEnv.authenticatedContext(STRANGER).firestore()
+// Open signup, 2026-08-25: signing in is the whole gate, so a brand new
+// account IS a host. These cases changed shape rather than disappearing, and
+// they are now the ones that matter most: the guarantee is no longer "we let
+// the right people in", it is "everyone is let in and still sees only their
+// own".
+describe('a brand new account', () => {
+  const asNewcomer = () => testEnv.authenticatedContext(NEWCOMER).firestore()
 
-  it.each(COLLECTIONS)('cannot read %s at all', async (name) => {
-    await assertFails(getDoc(doc(asStranger(), name, 'owned')))
+  it.each(COLLECTIONS)('still cannot read the owner %s document', async (name) => {
+    await assertFails(getDoc(doc(asNewcomer(), name, 'owned')))
   })
 
-  it('cannot create a document even under its own uid', async () => {
+  it.each(COLLECTIONS)('still cannot list %s by claiming the owner uid', async (name) => {
     await assertFails(
-      setDoc(doc(asStranger(), 'hp_people', 'nope'), { ownerUid: STRANGER, email: 'd@example.com' }),
+      getDocs(query(collection(asNewcomer(), name), where('ownerUid', '==', OWNER))),
     )
   })
 
-  it('cannot read the allowlist', async () => {
-    await assertFails(getDoc(doc(asStranger(), 'hp_config/allowlist')))
+  it('can create its own document, which is the point of open signup', async () => {
+    await assertSucceeds(
+      setDoc(doc(asNewcomer(), 'hp_people', 'mine'), { ownerUid: NEWCOMER, email: 'd@example.com' }),
+    )
+  })
+
+  it('cannot create a document owned by someone else', async () => {
+    await assertFails(
+      setDoc(doc(asNewcomer(), 'hp_people', 'theirs'), { ownerUid: OWNER, email: 'e@example.com' }),
+    )
+  })
+
+  it('cannot read the retired allowlist document', async () => {
+    await assertFails(getDoc(doc(asNewcomer(), 'hp_config/allowlist')))
   })
 })
 
 describe('a signed-out visitor', () => {
   it.each(COLLECTIONS)('cannot read %s', async (name) => {
     await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), name, 'owned')))
+  })
+
+  it.each(COLLECTIONS)('cannot create %s either', async (name) => {
+    await assertFails(
+      setDoc(doc(testEnv.unauthenticatedContext().firestore(), name, 'nope'), { ownerUid: 'anyone' }),
+    )
   })
 })

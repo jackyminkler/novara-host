@@ -6,11 +6,10 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
-import { auth, googleProvider, db, useEmulators } from '../lib/firebase'
+import { auth, googleProvider, useEmulators } from '../lib/firebase'
 import { dataMode } from '../data/api'
 
-export type Access = 'loading' | 'signedOut' | 'checking' | 'allowed' | 'denied' | 'error'
+export type Access = 'loading' | 'signedOut' | 'allowed'
 
 export interface HostIdentity {
   uid: string
@@ -25,7 +24,6 @@ interface AuthValue {
   access: Access
   signIn: () => void
   signOut: () => void
-  retry: () => void
   signInError: string | null
 }
 
@@ -78,31 +76,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [access, setAccess] = useState<Access>(dataMode === 'mock' ? 'allowed' : 'loading')
   const [signInError, setSignInError] = useState<string | null>(null)
 
-  const checkAccess = useCallback(async (u: User) => {
-    setAccess('checking')
-    try {
-      const snap = await getDoc(doc(db, 'hp_config', 'allowlist'))
-      const uids = snap.exists() ? (snap.data().uids as string[]) : []
-      setAccess(Array.isArray(uids) && uids.includes(u.uid) ? 'allowed' : 'denied')
-    } catch (err) {
-      // Rules deny allowlist reads to anyone not on it, so permission-denied
-      // is the normal "not a host" signal, not a failure.
-      const code = (err as { code?: string })?.code
-      setAccess(code === 'permission-denied' ? 'denied' : 'error')
-    }
-  }, [])
+// Open signup, 2026-08-25. Anyone who signs in with Google gets their own
+// workspace, and there is no gate in front of it.
+//
+// This is only safe because owner scoping shipped first. The allowlist was a
+// coarse fence in front of a shared pile of data; ownerUid is enforced on
+// every document by the rules, so a new account can see exactly nothing of
+// anyone else's either way. Removing the check also drops one billed read per
+// operation, since hpIsHost() no longer has to fetch the allowlist document.
+//
+// Firebase Auth already records every signup with email and creation time, so
+// there is nothing here to write: the Auth console is the list of who joined.
 
   useEffect(() => {
     if (dataMode === 'mock') return
     return onAuthStateChanged(auth, (u) => {
       setUser(u ? toIdentity(u) : null)
-      if (u) {
-        checkAccess(u)
-      } else {
-        setAccess('signedOut')
-      }
+      setAccess(u ? 'allowed' : 'signedOut')
     })
-  }, [checkAccess])
+  }, [])
 
   const signIn = useCallback(async () => {
     setSignInError(null)
@@ -142,14 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (dataMode !== 'mock') void firebaseSignOut(auth)
   }, [])
 
-  const retry = useCallback(() => {
-    if (dataMode === 'mock') return
-    const current = auth.currentUser
-    if (current) void checkAccess(current)
-  }, [checkAccess])
-
   return (
-    <AuthContext.Provider value={{ user, access, signIn, signOut, retry, signInError }}>
+    <AuthContext.Provider value={{ user, access, signIn, signOut, signInError }}>
       {children}
     </AuthContext.Provider>
   )

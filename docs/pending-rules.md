@@ -11,6 +11,65 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
+### Open signup: `hpIsHost()` no longer reads the allowlist
+
+Written 2026-08-25. Jacky's call: no gate at all, anyone signed in gets their own workspace, with
+new users welcome as testers and early adopters. **This supersedes PRD section 0.4 and the
+allowlist line in CLAUDE.md**, both of which are updated in the same change.
+
+**Why this is safe, and it only is because of the order things shipped.** The allowlist was a
+coarse fence in front of a shared pile of data: everyone behind it could read everything. Owner
+scoping went live earlier today, and `hpOwns()` is enforced on every document in every `hp_`
+collection. So "anyone signed in" and "anyone on a list" are equally safe now, because neither one
+can read the other's rows. Doing this before owner scoping would have handed the whole database to
+anyone with a Google account.
+
+It also removes a billed `get()` from every single operation: `hpIsHost()` no longer fetches
+`hp_config/allowlist` to answer.
+
+Anonymous sign-in is excluded explicitly. It is not enabled on this project and must not be, since
+it would hand a throwaway session a workspace. The condition says so rather than relying on the
+setting staying off.
+
+`hp_config` goes to `allow read, write: if false`. Nothing reads it any more: the client check is
+gone. Left denied rather than deleted so an older client build cannot quietly depend on it.
+
+Rehearsed: `emulator/firestore.rules` carries this, and `tests/ownership.rules.test.ts` was
+reshaped rather than trimmed. The old cases asked whether the right people get in; the new ones ask
+the question that now matters, which is whether a brand new account that IS let in can reach
+anything of anyone else's. It cannot: it can create its own documents, cannot create one owned by
+someone else, and cannot read or list the owner's. Green at 99, up from 80.
+
+Replace the existing `hpIsHost()` and `hp_config` block with these. Every other block is unchanged:
+`hpOwns()`, `hpOwnsNew()` and `hpOwnsEvent()` tighten correctly on their own, because they compose
+`hpIsHost()`.
+
+```
+// Open signup: anyone signed in with a real account is a host and gets
+// their own workspace. There is no allowlist any more.
+//
+// Safe only because ownerUid scoping shipped first. The allowlist was a
+// coarse fence in front of shared data; hpOwns() below is enforced on
+// every document, so a brand new account can read exactly nothing of
+// anyone else's. This also drops a billed get() from every operation.
+//
+// Anonymous sign-in is excluded deliberately. It is not enabled on this
+// project and must not be: it would hand a throwaway session a workspace.
+function hpIsHost() {
+  return request.auth != null
+    && request.auth.token.firebase.sign_in_provider != 'anonymous';
+}
+
+match /hp_config/{docId} {
+  // Nothing reads this any more. Left denied rather than deleted so an
+  // old client build cannot quietly depend on it.
+  allow read, write: if false;
+}
+```
+
+No index, no backfill. `hp_config/allowlist` can stay in the database as a dead document; deleting
+it is optional and changes nothing.
+
 ### `hp_feedback`
 
 Written 2026-08-25 for CRM sprint 1 step 4. One new collection, one match block, same owner-scoped

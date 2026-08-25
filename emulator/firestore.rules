@@ -10,9 +10,19 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Novara host platform (hp_ collections). Hosts only; guests go through
     // the hpGuest* Cloud Functions with the Admin SDK and never hit rules.
+    // Open signup: anyone signed in with a real account is a host and gets
+    // their own workspace. There is no allowlist any more.
+    //
+    // Safe only because ownerUid scoping shipped first. The allowlist was a
+    // coarse fence in front of shared data; hpOwns() below is enforced on
+    // every document, so a brand new account can read exactly nothing of
+    // anyone else's. This also drops a billed get() from every operation.
+    //
+    // Anonymous sign-in is excluded deliberately. It is not enabled on this
+    // project and must not be: it would hand a throwaway session a workspace.
     function hpIsHost() {
       return request.auth != null
-        && request.auth.uid in get(/databases/$(database)/documents/hp_config/allowlist).data.uids;
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
     // On the allowlist AND the document is yours. Read, update and delete test
@@ -33,8 +43,9 @@ service cloud.firestore {
     }
 
     match /hp_config/{docId} {
-      allow read: if hpIsHost();
-      allow write: if false; // allowlist edits happen in the console in M0
+      // Nothing reads this any more. Left denied rather than deleted so an
+      // old client build cannot quietly depend on it.
+      allow read, write: if false;
     }
 
     match /hp_orgs/{orgId} {

@@ -1,15 +1,15 @@
 import { AuthProvider, useAuth } from './AuthProvider'
 import SignInPage from './SignInPage'
 import HostShell from './HostShell'
-import { AccessDeniedScreen, AccessErrorScreen, Splash } from './AccessScreens'
+import { Splash } from './AccessScreens'
 
 function HostGate() {
   const { access } = useAuth()
 
-  if (access === 'loading' || access === 'checking') return <Splash />
+  // Signed in is the whole check. Owner scoping in the rules is what keeps
+  // one host's data away from another, not a gate at the door.
+  if (access === 'loading') return <Splash />
   if (access === 'signedOut') return <SignInPage />
-  if (access === 'denied') return <AccessDeniedScreen />
-  if (access === 'error') return <AccessErrorScreen />
   return <HostShell />
 }
 
