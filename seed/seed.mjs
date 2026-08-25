@@ -7,6 +7,7 @@
 //   GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node seed/seed.mjs
 //   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node seed/seed.mjs   against the emulator
 //   node seed/seed.mjs --dry-run     to print what would be written
+//   node seed/seed.mjs --only-new    create what is missing, never overwrite
 //
 // Re-running is safe: documents are matched by name and updated in place, so
 // nothing is duplicated and nothing the host has edited by hand is deleted.
@@ -18,6 +19,11 @@ import { adminDb, announceTarget } from './admin.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const dryRun = process.argv.includes('--dry-run')
+// For a first run against a database that already holds hand-edited documents:
+// create what is missing and touch nothing that exists. The merge below
+// replaces every field present in content.json, so an existing document
+// silently loses anything typed into the app that this file also carries.
+const onlyNew = process.argv.includes('--only-new')
 
 let content
 try {
@@ -49,6 +55,10 @@ async function upsert(collection, name, data) {
     return owner === undefined || owner === content.ownerUid
   })
 
+  if (onlyNew && match) {
+    console.log(`skipped ${collection}: ${name} (exists, --only-new)`)
+    return
+  }
   if (dryRun) {
     console.log(`${match ? 'update' : 'create'} ${collection}: ${name}`)
     return

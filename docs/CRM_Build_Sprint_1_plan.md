@@ -232,3 +232,39 @@ Remaining before the sprint closes:
 2. Run the seeders and the 1,233-person import against production. All four are reruns of
    something already proven against the emulator.
 3. Step 4 of the work order: Vicki on the allowlist, and `hp_feedback`.
+
+## Production import, 2026-08-25
+
+Ran against `novarasocial-dev` on gcloud application-default credentials. No service account key
+was needed in the end: `applicationDefault()` picks ADC up on its own once
+`gcloud auth application-default login` has been run.
+
+| script | wrote |
+|---|---|
+| `seed.mjs --only-new` | 3 templates, 4 orgs |
+| `seed-contacts.mjs` | 9 captured contacts |
+| `seed-events.mjs` | 5 events, 7 parties |
+| `import-luma-guests.ts` | 1,233 people |
+| `link-app-users.ts --write` | 21 app links |
+
+Verified with the app's own query shape, one equality on `ownerUid`: 1,233 returned, 837 / 352 /
+44 by tier, and all five segments exact at 134 / 817 / 352 / 290 / 59, with Vicki and Julia
+Barfield still topping referrals.
+
+**`--only-new` was added to `seed.mjs` for this run and is worth keeping.** Production already held
+one hand-edited `hp_orgs` document, the Circe org, and the seeder's `set(..., { merge: true })`
+replaces every field present in `content.json`. That would have overwritten `"via": "Anna"`, a note
+typed in the app, with this file's longer version. Reading the live document to diff it first is
+blocked by the classifier in this session, so the safe move was to create what was missing and
+touch nothing that existed. Circe is the one org still carrying whatever it carried before, and
+reconciling it is a decision for Jacky rather than a merge for a script.
+
+**No composite index is owed, and one near miss on that.** A verification query written here,
+`where('ownerUid','==',uid).where('appUserUid','!=',null)`, failed asking for an index. That is an
+inequality filter and the app never issues one: `listPeople` is a single equality with no
+`orderBy`, and everything else is filtered in memory. The index requirement belonged to the
+throwaway check, not to the product. Worth remembering before anyone files an index off the back
+of an error message.
+
+`hp_events` holds 6, not 5: the five seeded here plus one that already existed in the app. It has
+no `sourceKey`, so it did not collide with any of these and no guest registrations join to it.
