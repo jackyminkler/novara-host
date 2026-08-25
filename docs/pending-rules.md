@@ -6,10 +6,35 @@ Workflow: when a new or changed `hp_` collection needs a rules match block, a co
 
 Reminders for whoever writes entries here:
 
-- Every `hp_` collection needs its own explicit match block with the `hp_config/allowlist` condition. Rules cannot wildcard a collection-name prefix.
+- Every `hp_` collection needs its own explicit match block with the owner condition (`hpOwns()` / `hpOwnsNew()`). Rules cannot wildcard a collection-name prefix. The `hp_config/allowlist` gate this used to say was retired on 2026-08-25; see the open signup entry below.
 - Never a collection-group rule (`match /{path=**}/name/`). Those span the consumer app's subcollections in the shared ruleset.
 
 ## Pending
+
+**Handoff, 2026-08-25. Two entries, one deploy.** Both change the same file and should go together
+so the ruleset is never half-migrated.
+
+1. Open the consumer repo's `firebase/firestore.rules` on an up-to-date `main`.
+2. **Replace** the existing `hpIsHost()` function and the whole `match /hp_config/{docId}` block
+   with the versions in *Open signup* below. Nothing else changes: `hpOwns()`, `hpOwnsNew()` and
+   `hpOwnsEvent()` are already correct and tighten on their own, because they compose `hpIsHost()`.
+3. **Add** the `match /hp_feedback/{entryId}` block from the *`hp_feedback`* entry, alongside the
+   other `hp_` blocks.
+4. Deploy rules from that repo, then read the deployed ruleset back and confirm both landed.
+5. Sign in to the host app and confirm the workspace still loads.
+
+No index and no backfill this time. `hp_feedback` is a new collection with no documents predating
+`ownerUid`, and open signup only loosens who counts as a host.
+
+**Heads up for whoever applies this: one line in the consumer repo's own `CLAUDE.md` is now stale.**
+Its §Shared Firebase Project says `hp_` blocks are "gated on the `hp_config/allowlist` UID list".
+That is exactly what this entry retires. It should read that isolation is per-document `ownerUid`,
+not an allowlist. This repo must never edit the consumer repo, so that correction has to happen
+there.
+
+**Order matters only in one direction.** Until this is deployed, production still enforces the
+allowlist while the shipped client no longer asks about it, so a new signup gets a workspace the
+rules will refuse. Deploy before pointing anyone new at the app.
 
 ### Open signup: `hpIsHost()` no longer reads the allowlist
 
