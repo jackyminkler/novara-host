@@ -17,6 +17,7 @@ import type {
   AvailabilityInput,
   ContactInput,
   CreateEventInput,
+  FeedbackInput,
   MomentInput,
   OrgInput,
   PartyInput,
@@ -56,6 +57,7 @@ const AVAILABILITY = 'hp_availability'
 const MOMENTS = 'hp_moments'
 const TOKENS = 'hp_guestTokens'
 const PEOPLE = 'hp_people'
+const FEEDBACK = 'hp_feedback'
 
 const sub = (eventId: string, name: string) => collection(db, EVENTS, eventId, name)
 
@@ -512,6 +514,15 @@ export const firebaseApi: HostApi = {
 
   async updatePerson(personId: string, patch: PersonEdit) {
     await updateDoc(doc(db, PEOPLE, personId), patch)
+  },
+
+  async sendFeedback(input: FeedbackInput, uid: string) {
+    const ref = await addDoc(collection(db, FEEDBACK), {
+      ...input,
+      ownerUid: uid,
+      createdAt: now(),
+    })
+    return ref.id
   },
 
   // F11, recap

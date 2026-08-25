@@ -19,6 +19,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useAuth, useHost } from "./AuthProvider";
 import { useSidebar, type SidebarState } from "./useSidebar";
+import { FeedbackButton } from "./FeedbackButton";
 import { Wordmark } from "./Wordmark";
 import { cx } from "../ui/primitives";
 import { initials } from "../data/profiles";
@@ -84,7 +85,11 @@ function SideNav({
   return (
     <nav
       className={cx(
-        "hairline flex shrink-0 flex-col border-0 border-r border-line bg-surface",
+        // Pinned to the viewport, not to the page. The nav stretches to the
+        // flex container's height otherwise, so on a long page (People runs to
+        // 1,233 rows) the foot of the sidebar, sign out included, ends up
+        // thousands of pixels below the fold.
+        "hairline sticky top-0 flex h-screen shrink-0 flex-col overflow-y-auto border-0 border-r border-line bg-surface",
         collapsed ? "w-[54px] items-center py-[14px]" : "w-44 px-3 py-4",
       )}
     >
@@ -129,6 +134,8 @@ function SideNav({
           collapsed ? "items-center gap-2" : "w-full gap-3",
         )}
       >
+        <FeedbackButton collapsed={collapsed} />
+
         <div className="group relative">
           <button
             type="button"

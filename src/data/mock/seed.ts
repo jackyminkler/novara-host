@@ -13,6 +13,7 @@ import type {
   Template,
   Person,
   Registration,
+  Feedback,
 } from '../types'
 
 /**
@@ -34,6 +35,7 @@ export interface MockStore {
   moments: CitywideMoment[]
   tokens: GuestToken[]
   people: Person[]
+  feedback: Feedback[]
 }
 
 const HOST = 'mock-host-uid'
@@ -656,5 +658,6 @@ export function buildStore(): MockStore {
     moments,
     tokens,
     people: buildPeople(),
+    feedback: [],
   }
 }

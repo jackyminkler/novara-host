@@ -348,6 +348,19 @@ export interface Person {
   registrations: Registration[]
 }
 
+// Step 4. Feedback from a friends-and-family tester, written from anywhere in
+// the app. Deliberately write-only from the product's side: the host reads it
+// out of the console. A whole feedback system is not the point of this.
+
+export interface Feedback {
+  id: string
+  ownerUid: string
+  text: string
+  /** Where they were when they sent it, so a vague note is still actionable. */
+  route: string
+  createdAt: string
+}
+
 /** Everything the event workspace needs, in one call. */
 export interface EventBundle {
   event: EventDoc

@@ -268,3 +268,30 @@ of an error message.
 
 `hp_events` holds 6, not 5: the five seeded here plus one that already existed in the app. It has
 no `sourceKey`, so it did not collide with any of these and no guest registrations join to it.
+
+## Step 4, 2026-08-25
+
+**`hp_feedback` built.** A "Feedback" button pinned in the sidebar foot, reachable from every
+screen, opening one textarea. It writes a single owner-stamped document and never reads one back:
+the host reads them in the console. An inbox, replies, and statuses are a whole product and none of
+it is what a friends-and-family round needs. The current route rides along, so "this bit is
+confusing" is still actionable a week later.
+
+It is owner scoped like everything else, which matters specifically here: feedback is where a
+tester says something candid, and one tester's notes should not be readable by another allowlisted
+account. The rules block is in `docs/pending-rules.md` under Pending. Already rehearsed:
+`emulator/firestore.rules` carries it and `hp_feedback` joined the `COLLECTIONS` list the suite
+parameterises over, so it inherited every case. Green at 80, up from 72.
+
+**A real bug surfaced while verifying it.** The sidebar had no sticky positioning, so the nav
+stretched to the flex container's height rather than the viewport's. On a long page the foot of the
+sidebar, which holds the collapse toggle, the host identity, and **sign out**, sat below the fold.
+The People page made it undeniable at 1,233 rows, roughly fifteen thousand pixels down, but it was
+already true of Events and Capture. Fixed with `sticky top-0 h-screen`. A "persistent affordance"
+that needs a thousand rows of scrolling is not persistent, and neither was sign out.
+
+**Blocked, and it needs a person:** Vicki's Google UID. It does not exist until she signs in once,
+and `hp_config/allowlist` is `allow write: if false` by design, so it is a console edit. The
+sequence is: Vicki opens the app and is refused, Jacky reads her UID out of the Firebase Auth
+console, adds it to the allowlist, and Vicki signs in again to an empty workspace of her own. With
+owner scoping live, empty is exactly what she should see.

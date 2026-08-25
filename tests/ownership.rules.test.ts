@@ -48,6 +48,7 @@ const COLLECTIONS = [
   'hp_moments',
   'hp_guestTokens',
   'hp_people',
+  'hp_feedback',
 ]
 
 let testEnv: RulesTestEnvironment

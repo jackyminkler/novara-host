@@ -11,7 +11,37 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-Nothing pending.
+### `hp_feedback`
+
+Written 2026-08-25 for CRM sprint 1 step 4. One new collection, one match block, same owner-scoped
+shape as every other `hp_` collection. **No index needed**: the app only ever writes to it.
+
+Testers on the friends-and-family round need a way to say what is missing without leaving the app.
+`hp_feedback` is that, and deliberately nothing more: the app writes an entry and never reads one
+back. The host reads them in the Firebase console. An inbox, replies, and statuses are a whole
+product and none of it is what this round needs.
+
+Owner scoped rather than world-writable so one tester's notes are not readable by another
+allowlisted account, which matters precisely because feedback is where someone says something
+candid about the product.
+
+Already rehearsed: `emulator/firestore.rules` carries this block, and `hp_feedback` is in the
+`COLLECTIONS` list that `tests/ownership.rules.test.ts` parameterises over, so it inherits the full
+set of cases. The suite is green at 80, up from 72.
+
+```
+// Tester feedback. Written from anywhere in the app, read out of the
+// console. Owner scoped like the rest, so one tester's notes are not
+// readable by another allowlisted account.
+match /hp_feedback/{entryId} {
+  allow read, update, delete: if hpOwns();
+  allow create: if hpOwnsNew();
+}
+```
+
+Nothing else changes. No backfill is needed this time: the collection does not exist yet, so there
+are no documents predating `ownerUid`.
+
 
 ## Applied
 

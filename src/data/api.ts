@@ -9,6 +9,7 @@ import type {
   LogEntry,
   Org,
   OwnerRef,
+  Feedback,
   Party,
   Person,
   ResponseSource,
@@ -65,6 +66,8 @@ export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
  * importer, so allowing a component to patch it would be silently undone on
  * the next import.
  */
+export type FeedbackInput = Omit<Feedback, 'id' | 'ownerUid' | 'createdAt'>
+
 export type PersonEdit = Partial<Pick<Person, 'notes' | 'followUp' | 'tags'>>
 
 /**
@@ -144,6 +147,10 @@ export interface HostApi {
   listPeople(): Promise<Person[]>
   getPerson(id: string): Promise<Person | null>
   updatePerson(id: string, patch: PersonEdit): Promise<void>
+
+  // Step 4, tester feedback. One write, no read: the smallest thing that lets
+  // a tester say what is missing without leaving the app.
+  sendFeedback(input: FeedbackInput, uid: string): Promise<string>
 
   // F11, recap
   saveRecap(eventId: string, recap: EventRecap): Promise<void>

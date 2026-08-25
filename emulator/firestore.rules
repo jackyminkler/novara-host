@@ -95,6 +95,14 @@ service cloud.firestore {
       allow create: if hpOwnsNew();
     }
 
+    // Tester feedback. Written from anywhere in the app, read out of the
+    // console. Owner scoped like the rest, so one tester's notes are not
+    // readable by another allowlisted account.
+    match /hp_feedback/{entryId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
     // Mirrors the shared ruleset's default deny for everything unmatched.
     match /{document=**} {
       allow read, write: if false;

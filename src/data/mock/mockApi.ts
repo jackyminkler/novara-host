@@ -1,4 +1,4 @@
-import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
+import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
 import type {
   CrewMember,
   EventBundle,
@@ -507,6 +507,13 @@ export const mockApi: HostApi = {
     if (person) Object.assign(person, clone(patch))
     persist()
     return ok(undefined)
+  },
+
+  sendFeedback: (input: FeedbackInput, uid: string) => {
+    const entry = { ...clone(input), id: id('fb'), ownerUid: uid, createdAt: new Date().toISOString() }
+    store.feedback.push(entry)
+    persist()
+    return ok(entry.id)
   },
 
   // F11, recap
