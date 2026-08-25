@@ -11,30 +11,39 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-**Handoff, 2026-08-25. Two entries, one deploy.** Both change the same file and should go together
-so the ruleset is never half-migrated.
+Nothing pending.
 
-1. Open the consumer repo's `firebase/firestore.rules` on an up-to-date `main`.
-2. **Replace** the existing `hpIsHost()` function and the whole `match /hp_config/{docId}` block
-   with the versions in *Open signup* below. Nothing else changes: `hpOwns()`, `hpOwnsNew()` and
-   `hpOwnsEvent()` are already correct and tighten on their own, because they compose `hpIsHost()`.
-3. **Add** the `match /hp_feedback/{entryId}` block from the *`hp_feedback`* entry, alongside the
-   other `hp_` blocks.
-4. Deploy rules from that repo, then read the deployed ruleset back and confirm both landed.
-5. Sign in to the host app and confirm the workspace still loads.
+## Applied
 
-No index and no backfill this time. `hp_feedback` is a new collection with no documents predating
-`ownerUid`, and open signup only loosens who counts as a host.
+### Open signup and `hp_feedback`
 
-**Heads up for whoever applies this: one line in the consumer repo's own `CLAUDE.md` is now stale.**
-Its §Shared Firebase Project says `hp_` blocks are "gated on the `hp_config/allowlist` UID list".
-That is exactly what this entry retires. It should read that isolation is per-document `ownerUid`,
-not an allowlist. This repo must never edit the consumer repo, so that correction has to happen
-there.
+**Deployed 2026-08-25 and verified live.** Read back from the Firebase Rules API for
+`novarasocial-dev` (ruleset `93d30a9e-b1b5-4630-8f84-23b689a43bae`), not from a checkout: the
+deployed ruleset carries the open-signup `hpIsHost()`, the `hp_feedback` block, and `hp_config`
+denied to everyone. All three landed.
 
-**Order matters only in one direction.** Until this is deployed, production still enforces the
-allowlist while the shipped client no longer asks about it, so a new signup gets a workspace the
-rules will refuse. Deploy before pointing anyone new at the app.
+**But the consumer repo's `main` carries none of them.** They live on an unmerged branch,
+`hp-rules-open-signup-feedback` (`1518957`), which is what was deployed from. `main` at `bc1057a`
+still has the allowlist form of `hpIsHost()` and no `hp_feedback` block. A
+`firebase deploy --only firestore` from `main` would revert open signup and drop `hp_feedback`,
+locking out new signups and breaking the feedback button. Owner scoping and `hp_people` would
+survive, so the damage is partial rather than total, which arguably makes it easier to miss.
+
+**This is the second time in one day.** The same thing happened with `b88363f`, applied to
+production on 2026-08-19 and stranded off `main` until PR #199 merged it on 2026-08-24. Twice in
+twelve hours is a workflow, not an accident: rules get deployed from the branch they were written
+on and the merge is treated as tidying. The deploy is the thing that feels final, so nothing
+downstream forces the merge. Worth a guard, for example refusing to deploy rules from a ref that is
+not an ancestor of `main`.
+
+**Fix: merge `hp-rules-open-signup-feedback` into `main`.** Nothing needs redeploying; production is
+already correct.
+
+**A third grep trap, caught this time.** Checking whether `main` had the change,
+`grep -c "sign_in_provider != 'anonymous'"` returned 1 and looked like a pass. It was matching a
+different, consumer-side function that happens to use the same expression; `hpIsHost()` two lines
+away still read the allowlist. Reading the function body is what settled it. Same failure as the
+two recorded above: a grep answers "does this string appear", never "does this thing exist".
 
 ### Open signup: `hpIsHost()` no longer reads the allowlist
 
@@ -126,8 +135,6 @@ match /hp_feedback/{entryId} {
 Nothing else changes. No backfill is needed this time: the collection does not exist yet, so there
 are no documents predating `ownerUid`.
 
-
-## Applied
 
 ### Owner scoping on every `hp_` collection, plus `hp_people`
 
