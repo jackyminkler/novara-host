@@ -16,22 +16,33 @@ Reminders for whoever writes entries here:
 Written 2026-08-25 for CRM sprint 1 (`docs/CRM_Build_Sprint_1_workorder.md` steps 1 and 2).
 This is one batch on purpose: three changes that would otherwise be three separate handovers.
 
-**Where the current rules live, verified 2026-08-25.** `~/novara` is the consumer repo and its
-`firebase.json` points Firestore rules at `firebase/firestore.rules`. That file on `main` carries
-the complete `hp_` section: `hpIsHost()` plus match blocks for `hp_config`, `hp_orgs`, `hp_events`
-(with `parties`, `tasks`, `runOfShow`, `log`, `crew`), `hp_guestTokens`, `hp_contacts`,
-`hp_templates`, `hp_availability`, and `hp_moments`, under a comment citing this file as their
-source. The handover flow has been followed and the repo is the source of truth, so applying the
-block below there is safe and complete.
+**Where the rules live, and a near miss worth keeping.** Verified 2026-08-25 at pinned commits,
+not at "main":
 
-An earlier revision of this entry claimed the opposite. That was a bad read: `HEAD` in `~/novara`
-moved between two of the checking commands (`3697132` to `f898233`) and the grep caught the tree
-between states. What moved it is not established, and the session working alongside this one says
-it never opened that repo. Corrected here rather than deleted, because the wrong version was acted
-on in conversation. If the same discrepancy shows up again, trust `git log -S` over a single grep:
-it correctly showed two commits adding the `hp_` blocks and none removing them.
+```
+git show 3697132:firebase/firestore.rules | grep -c "match /hp_"   ->  0
+git show f898233:firebase/firestore.rules | grep -c "match /hp_"   ->  8
+```
 
-The blocks on `main` are still the `hpIsHost()`-only form, which is why the ordering below matters.
+The `hp_` blocks were applied to the live project on 2026-08-19 and 2026-08-20 and were serving
+production the whole time, but they were **not on `main`**. Commit `b88363f` ("Commit the live hp_
+rules batch 1 that was only in the working tree") sat on an unmerged branch and was not an
+ancestor of `main`'s tip. `main` carried zero `hp_` match blocks from 2026-08-18 until PR #199
+merged at 2026-08-24 22:56, which finally pulled `b88363f` into `main`'s history.
+
+For those six days, `firebase deploy --only firestore` from `~/novara` would have overwritten the
+live ruleset with one containing none of the eight blocks, locking the host app out of every one
+of its collections. That window is closed: `main` carries all eight today, and applying the block
+below through the consumer repo is safe.
+
+**The lesson is to pin the commit, not to prefer one tool.** This entry briefly recorded the
+opposite of the above, on the theory that the original finding was a bad read and that
+`git log -S` should have been trusted over `grep`. Both halves were wrong. The two checks ran
+either side of the PR #199 merge and each was accurate for the commit it saw; `git log -S "hp_"`
+returns nothing at `3697132` too, because `b88363f` was not in that history at all. `grep` and
+`log -S` agreed at both points. The variable was never the tool, it was which commit `HEAD`
+pointed at. When recording a rules finding, record `git rev-parse HEAD` with it: "main" is a
+moving target whenever another session is working in that repo.
 
 **Do not apply this until the backfill has run.** The new condition reads `ownerUid` off each
 document, and every document written before this sprint has no such field. Applying the rules

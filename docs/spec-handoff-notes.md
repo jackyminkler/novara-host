@@ -71,3 +71,22 @@ decisions in the same commit as the code change, and Cowork sweeps them into `MA
 The same loop works for specs. Claude Code appends to this file whenever a spec claim turns
 out to be wrong against the code; Cowork reads it before writing the next work order. The
 corrections then compound instead of being rediscovered every sprint.
+
+## Addendum, 2026-08-25: pin the commit when you check another repo
+
+A finding recorded here as fact was reversed, then reversed back. The subject was whether the
+consumer repo's `firestore.rules` carried the `hp_` blocks. Two checks an hour apart disagreed,
+and the natural reading was that one of them misread. Neither did: PR #199 merged between them
+and genuinely changed the answer. `main` had carried zero `hp_` blocks for six days while
+production served eight, so a rules deploy from the repo would have dropped all of them.
+
+Three things generalise:
+
+- **Record the commit, not the branch.** `git rev-parse HEAD` alongside any finding about another
+  repo. A branch name is a moving target the moment a second session is working there.
+- **Two disagreeing checks mean the thing changed, at least as often as one of them was wrong.**
+  Reaching for "I misread" is the comfortable resolution and it buried a real near miss.
+- **Beware the tidy methodological lesson.** The retraction came with a confident rule, prefer
+  `git log -S` over `grep`, that was itself false: both returned the same answer at both commits.
+  A wrong diagnosis dressed as a process improvement is worse than no lesson, because it gets
+  reused.
