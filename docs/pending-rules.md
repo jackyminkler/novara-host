@@ -24,9 +24,12 @@ the complete `hp_` section: `hpIsHost()` plus match blocks for `hp_config`, `hp_
 source. The handover flow has been followed and the repo is the source of truth, so applying the
 block below there is safe and complete.
 
-An earlier revision of this entry claimed the opposite. That was a bad read: the check ran while
-another session was moving `HEAD` in that repo, and caught it between states. Corrected here
-rather than deleted, because the wrong version was acted on in conversation.
+An earlier revision of this entry claimed the opposite. That was a bad read: `HEAD` in `~/novara`
+moved between two of the checking commands (`3697132` to `f898233`) and the grep caught the tree
+between states. What moved it is not established, and the session working alongside this one says
+it never opened that repo. Corrected here rather than deleted, because the wrong version was acted
+on in conversation. If the same discrepancy shows up again, trust `git log -S` over a single grep:
+it correctly showed two commits adding the `hp_` blocks and none removing them.
 
 The blocks on `main` are still the `hpIsHost()`-only form, which is why the ordering below matters.
 

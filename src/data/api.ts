@@ -10,6 +10,7 @@ import type {
   Org,
   OwnerRef,
   Party,
+  Person,
   ResponseSource,
   ResponseValue,
   RunItem,
@@ -58,6 +59,13 @@ export interface RunItemInput {
 export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy' | 'ownerUid'>
 export type AvailabilityInput = Omit<AvailabilityBlock, 'id' | 'ownerUid'>
 export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
+
+/**
+ * The only writable slice of a person. Everything else is derived by the
+ * importer, so allowing a component to patch it would be silently undone on
+ * the next import.
+ */
+export type PersonEdit = Partial<Pick<Person, 'notes' | 'followUp' | 'tags'>>
 
 /**
  * The one seam between the app and its storage. Components import this, never
@@ -129,6 +137,13 @@ export interface HostApi {
   listMoments(): Promise<CitywideMoment[]>
   createMoment(input: MomentInput): Promise<string>
   deleteMoment(id: string): Promise<void>
+
+  // CRM-1, people. listPeople returns the owner's whole list in one read and
+  // the page filters in memory: at this size that needs no composite index and
+  // makes search instant. Revisit past roughly 10,000 people per host.
+  listPeople(): Promise<Person[]>
+  getPerson(id: string): Promise<Person | null>
+  updatePerson(id: string, patch: PersonEdit): Promise<void>
 
   // F11, recap
   saveRecap(eventId: string, recap: EventRecap): Promise<void>

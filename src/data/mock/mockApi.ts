@@ -1,4 +1,4 @@
-import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, MomentInput, OrgInput, PartyInput, RunItemInput, TaskInput } from '../api'
+import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
 import type {
   CrewMember,
   EventBundle,
@@ -490,6 +490,20 @@ export const mockApi: HostApi = {
 
   deleteMoment: (momentId) => {
     store.moments = store.moments.filter((m) => m.id !== momentId)
+    persist()
+    return ok(undefined)
+  },
+
+  // CRM-1, people
+
+  listPeople: () =>
+    ok(owned(store.people).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))),
+
+  getPerson: (personId) => ok(store.people.find((p) => p.id === personId) ?? null),
+
+  updatePerson: (personId: string, patch: PersonEdit) => {
+    const person = store.people.find((p) => p.id === personId)
+    if (person) Object.assign(person, clone(patch))
     persist()
     return ok(undefined)
   },

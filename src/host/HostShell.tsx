@@ -8,6 +8,7 @@ import {
 import {
   CalendarDays,
   ChevronsLeft,
+  Contact,
   ChevronsRight,
   House,
   LogOut,
@@ -27,6 +28,8 @@ import EventWorkspace from "./event/EventWorkspace";
 import NewEventPage from "./pages/NewEventPage";
 import CalendarPage from "./pages/CalendarPage";
 import PartnersPage from "./pages/PartnersPage";
+import PeoplePage from "./pages/PeoplePage";
+import PersonDetailPage from "./pages/PersonDetailPage";
 import PartnerDetailPage from "./pages/PartnerDetailPage";
 import PartnerFormPage from "./pages/PartnerFormPage";
 import CapturePage from "./pages/CapturePage";
@@ -44,6 +47,7 @@ const NAV: NavItem[] = [
   { to: "/app/events", label: "Events", icon: Sparkles },
   { to: "/app/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/app/partners", label: "Partners", icon: Users },
+  { to: "/app/people", label: "People", icon: Contact },
   { to: "/app/capture", label: "Capture", icon: NotebookPen },
 ];
 
@@ -199,6 +203,8 @@ export default function HostShell() {
           <Route path="partners/new" element={<PartnerFormPage />} />
           <Route path="partners/:orgId/edit" element={<PartnerFormPage />} />
           <Route path="partners/:orgId" element={<PartnerDetailPage />} />
+          <Route path="people" element={<PeoplePage />} />
+          <Route path="people/:personId" element={<PersonDetailPage />} />
           <Route path="capture" element={<CapturePage />} />
           {/* PRD 3.4 called this orgs; the wireframes call it partners. */}
           <Route

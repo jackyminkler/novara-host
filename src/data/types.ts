@@ -278,6 +278,67 @@ export interface GuestToken {
   lastUsedAt: string | null
 }
 
+// CRM. Guest CRM Plan section 2. People who attend events, with per-event
+// registration history. Host-side only: guests never read or write hp_people.
+
+/**
+ * Derived on every import, never typed by hand. Precedence, not recency:
+ * approved anywhere beats invited anywhere beats declined, so someone who
+ * declined one run and came to another is signed_up, and declined_only means
+ * never approved for anything.
+ */
+export type PersonTier = 'signed_up' | 'invited_only' | 'declined_only'
+
+export type RegistrationStatus = 'approved' | 'invited' | 'declined'
+
+export interface Registration {
+  /** Stable slug for the event, e.g. "2026-06-13-sunrise-run-2". */
+  eventKey: string
+  lumaEventId: string | null
+  status: RegistrationStatus
+  registeredAt: string
+  checkedInAt: string | null
+  source: string | null
+  surveyRating: number | null
+  surveyFeedback: string | null
+  /** Event-specific registration questions, keyed by the question text. */
+  answers: Record<string, string>
+}
+
+export interface Person {
+  id: string
+  ownerUid: string
+  /** Normalised to trimmed lowercase. The dedupe key for every import. */
+  email: string
+  firstName: string
+  lastName: string
+  fullName: string
+  phone: string | null
+  handles: { instagram?: string; linkedin?: string }
+  /**
+   * The consumer-app users doc for this person, once matched. Null until then.
+   * A link, not a copy, per docs/Partner_Identity_And_Linking_Model_v1.md: the
+   * host's notes live here and never flow into the identity.
+   */
+  appUserUid: string | null
+  tier: PersonTier
+  /** Count of registrations with status approved. Derived. */
+  eventCount: number
+  firstSeenAt: string
+  lastSeenAt: string
+  sources: string[]
+  referredBy: string[]
+  /** The only fields a host edits. An import must never clear them. */
+  notes: string
+  followUp: { due: string; done: boolean } | null
+  tags: string[]
+  /**
+   * Embedded rather than a subcollection: bounded (a person attends tens of
+   * events, not thousands) and every read of a person wants the history.
+   */
+  registrations: Registration[]
+}
+
 /** Everything the event workspace needs, in one call. */
 export interface EventBundle {
   event: EventDoc

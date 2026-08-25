@@ -11,6 +11,8 @@ import type {
   RunItem,
   Task,
   Template,
+  Person,
+  Registration,
 } from '../types'
 
 /**
@@ -31,6 +33,7 @@ export interface MockStore {
   availability: AvailabilityBlock[]
   moments: CitywideMoment[]
   tokens: GuestToken[]
+  people: Person[]
 }
 
 const HOST = 'mock-host-uid'
@@ -84,6 +87,107 @@ function runItem(
   notes = '',
 ): RunItem {
   return { id, time, title, owner, notes, order }
+}
+
+// CRM fixture. Fictional people, like every other mock row: real guests enter
+// through the importer, never through application code (PRD guardrail 6).
+// Shaped to exercise all five saved segments the People page ships with.
+const PERSON_EVENTS = ['2026-05-16-presidio-sunrise', '2026-06-20-marina-track', '2026-07-18-embarcadero-loop']
+
+function registration(
+  eventKey: string,
+  status: Registration['status'],
+  day: string,
+  extra: Partial<Registration> = {},
+): Registration {
+  return {
+    eventKey,
+    lumaEventId: null,
+    status,
+    registeredAt: `${day}T17:00:00.000Z`,
+    checkedInAt: null,
+    source: null,
+    surveyRating: null,
+    surveyFeedback: null,
+    answers: {},
+    ...extra,
+  }
+}
+
+function buildPeople(): Person[] {
+  const names = [
+    'Ada Okafor', 'Bo Lindqvist', 'Cara Mendes', 'Dev Raman', 'Elle Fontaine',
+    'Finn Oyelaran', 'Gia Petrov', 'Hana Ishikawa', 'Ines Ferrer', 'Jonah Brandt',
+    'Kira Vasquez', 'Liam Doherty', 'Maya Chandra', 'Noor Haddad', 'Otto Lindgren',
+    'Pia Ramos', 'Quinn Alvarez', 'Rhea Kapoor', 'Sam Whitfield', 'Tessa Nakamura',
+    'Uma Delgado', 'Vik Sorensen', 'Willa Boateng', 'Xan Moreau', 'Yara Solomon',
+    'Zeke Ferraro', 'Aria Nwosu', 'Bram Kessler', 'Celia Vance', 'Dane Iverson',
+  ]
+  const sources = ['referral', 'Luma Feed', 'Instagram', '(direct)', 'Luma Discover']
+
+  return names.map((fullName, i) => {
+    const [firstName, lastName] = fullName.split(' ')
+    const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`
+
+    // A deterministic spread: every sixth person is invited-only, every
+    // eleventh declined, the rest signed up, and every third signed-up person
+    // came back a second time.
+    const registrations: Registration[] = []
+    if (i % 11 === 10) {
+      registrations.push(registration(PERSON_EVENTS[0], 'declined', '2026-05-02'))
+    } else if (i % 6 === 5) {
+      registrations.push(registration(PERSON_EVENTS[1], 'invited', '2026-06-05'))
+    } else {
+      registrations.push(
+        registration(PERSON_EVENTS[0], 'approved', '2026-05-04', {
+          source: sources[i % sources.length],
+          surveyRating: i % 4 === 0 ? 5 : null,
+          surveyFeedback: i % 8 === 0 ? 'Worth the early alarm. More of these.' : null,
+          answers: i % 5 === 0 ? { 'Would you like to join the partner waitlist?': 'Yes' } : {},
+        }),
+      )
+      if (i % 3 === 0) {
+        registrations.push(
+          registration(PERSON_EVENTS[1], 'approved', '2026-06-08', { source: 'referral' }),
+        )
+      }
+      if (i % 9 === 0) {
+        registrations.push(registration(PERSON_EVENTS[2], 'approved', '2026-07-06'))
+      }
+    }
+
+    const approved = registrations.filter((r) => r.status === 'approved')
+    const stamps = registrations.map((r) => r.registeredAt).sort()
+
+    return {
+      id: `person-${i + 1}`,
+      ownerUid: HOST,
+      email,
+      firstName,
+      lastName,
+      fullName,
+      phone: null,
+      handles: i % 4 === 1 ? { linkedin: `linkedin.com/in/${firstName.toLowerCase()}` } : {},
+      // A handful have been matched to an app account; most have not, which is
+      // what makes the "came to an event, not in the app yet" segment real.
+      appUserUid: i % 7 === 2 ? `app-uid-${i}` : null,
+      tier: approved.length
+        ? ('signed_up' as const)
+        : registrations.some((r) => r.status === 'invited')
+          ? ('invited_only' as const)
+          : ('declined_only' as const),
+      eventCount: approved.length,
+      firstSeenAt: stamps[0],
+      lastSeenAt: stamps[stamps.length - 1],
+      sources: [...new Set(registrations.map((r) => r.source).filter((v): v is string => !!v))],
+      // Two people brought several others, so the superconnector view has something in it.
+      referredBy: i > 0 && i % 4 === 3 ? ['ada.okafor@example.com'] : [],
+      notes: i === 0 ? 'Offered to help marshal the next one.' : '',
+      followUp: i === 3 ? { due: '2026-08-28', done: false } : null,
+      tags: i === 0 ? ['volunteer'] : i % 10 === 4 ? ['photographer'] : [],
+      registrations,
+    }
+  })
 }
 
 export function buildStore(): MockStore {
@@ -549,5 +653,6 @@ export function buildStore(): MockStore {
     availability,
     moments,
     tokens,
+    people: buildPeople(),
   }
 }

@@ -8,6 +8,11 @@ export type AnalyticsEvent =
   | 'hp_capture_created'
   | 'hp_followup_done'
   | 'hp_nudge_logged'
+  // CRM-1. Prefixed like every other event above: the Guest CRM Plan wrote
+  // these without the hp_ prefix, and one naming scheme beats matching a doc.
+  | 'hp_people_list_viewed'
+  | 'hp_person_viewed'
+  | 'hp_person_note_saved'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

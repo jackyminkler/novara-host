@@ -21,6 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { parseCsvRecords, type CsvRow } from './csv.ts'
+import type { Person, PersonTier, Registration } from '../src/data/types.ts'
 
 // The columns every Luma export carries. Anything else on a row is an
 // event-specific registration question and belongs in `answers`.
@@ -32,41 +33,10 @@ const STANDARD_COLUMNS = new Set([
   'survey_response_rating', 'survey_response_feedback', 'ticket_type_id', 'ticket_name',
 ])
 
-export type Tier = 'signed_up' | 'invited_only' | 'declined_only'
-export type RegStatus = 'approved' | 'invited' | 'declined'
-
-export interface Registration {
-  eventKey: string
-  lumaEventId: string | null
-  status: RegStatus
-  registeredAt: string
-  checkedInAt: string | null
-  source: string | null
-  surveyRating: number | null
-  surveyFeedback: string | null
-  answers: Record<string, string>
-}
-
-export interface Person {
-  ownerUid: string
-  email: string
-  firstName: string
-  lastName: string
-  fullName: string
-  phone: string | null
-  handles: { instagram?: string; linkedin?: string }
-  appUserUid: string | null
-  tier: Tier
-  eventCount: number
-  firstSeenAt: string
-  lastSeenAt: string
-  sources: string[]
-  referredBy: string[]
-  notes: string
-  followUp: { due: string; done: boolean } | null
-  tags: string[]
-  registrations: Registration[]
-}
+// The document shape is defined once, in the app's own types, and imported
+// here. Two hand-kept copies of this shape would drift the first time a field
+// is added, and the importer is the only writer, so drift would be silent.
+export type PersonDoc = Omit<Person, 'id'>
 
 /** The dedupe key. Everything downstream assumes email is already through this. */
 export const normalizeEmail = (raw: string): string => raw.trim().toLowerCase()
@@ -79,7 +49,7 @@ const uniq = (values: (string | null | undefined)[]): string[] =>
  * anywhere, which wins over declined. Someone who declined one run and came to
  * another is signed_up, and declined_only means never approved for anything.
  */
-export function tierFrom(registrations: Registration[]): Tier {
+export function tierFrom(registrations: Registration[]): PersonTier {
   if (registrations.some((r) => r.status === 'approved')) return 'signed_up'
   if (registrations.some((r) => r.status === 'invited')) return 'invited_only'
   return 'declined_only'
@@ -94,7 +64,7 @@ function registrationFrom(row: CsvRow, eventKey: string, lumaEventId: string | n
   return {
     eventKey,
     lumaEventId,
-    status: (row.approval_status || 'invited') as RegStatus,
+    status: (row.approval_status || 'invited') as Registration['status'],
     registeredAt: row.created_at || '',
     checkedInAt: row.checked_in_at || null,
     // utm_source is the campaign tag, referrer the Luma surface. Either can be
@@ -112,7 +82,7 @@ function linkedinFrom(answers: Record<string, string>): string | undefined {
   return key ? answers[key] : undefined
 }
 
-function blankPerson(ownerUid: string, email: string): Person {
+function blankPerson(ownerUid: string, email: string): PersonDoc {
   return {
     ownerUid, email,
     firstName: '', lastName: '', fullName: '',
@@ -131,7 +101,7 @@ function blankPerson(ownerUid: string, email: string): Person {
  * typed. Everything else is derived and recomputed in full.
  */
 export function applyRow(
-  people: Map<string, Person>,
+  people: Map<string, PersonDoc>,
   row: CsvRow,
   eventKey: string,
   lumaEventId: string | null,
@@ -211,7 +181,7 @@ async function main() {
   if (!jobs.length) throw new Error('nothing to import. Pass at least one --event with a --csv.')
   if (!flags.owner) throw new Error('set --owner or HOST_UID. It must be in hp_config/allowlist.')
 
-  const people = new Map<string, Person>()
+  const people = new Map<string, PersonDoc>()
   let existingCount = 0
 
   // Offline skips Firestore entirely, so the merge can be checked against known

@@ -140,11 +140,12 @@ so it is planned rather than assumed. Kept deliberately narrow: ownership cases 
 
 ## Decisions taken
 
-**2026-08-25, rules tests deferred.** Jacky chose hand verification against the emulator over
-standing up vitest and `@firebase/rules-unit-testing` this sprint. Consequence: the ownership
-rules get checked once, by hand, and nothing catches a later regression. This is why the owner
-field is uniform (`ownerUid` everywhere) rather than per-collection: with no automated check,
-the hand check has to be simple enough to get right.
+**2026-08-25, rules tests deferred, then reversed the same day.** Jacky first chose hand
+verification, then asked the session working alongside this one for the tests explicitly. They
+exist: `tests/ownership.rules.test.ts`, 72 cases via `@firebase/rules-unit-testing`, run with
+`npm run test:rules` against the emulator. Confirmed meaningful by running the same suite against
+the old `hpIsHost()`-only ruleset, where 33 of 72 fail. The uniform `ownerUid` convention stands
+and the suite is built on it.
 
 **2026-08-25, no composite index.** Every `list*` becomes one equality filter on `ownerUid`
 with no `orderBy`, because `readAll` in `firebaseApi` does a plain `getDocs` and the components
@@ -174,3 +175,37 @@ a browsable People page.
   rather than 587, so registrations replace in place rather than appending.
 - `seed` added to `tsconfig.json` include, so the new TypeScript is actually covered by
   `npx tsc --noEmit`. It was not before. Typecheck and `npm run build` both green.
+
+**Phases 2 to 5 complete, 2026-08-25**, by the session working alongside this one: `seed/admin.mjs`
+(the `FIRESTORE_EMULATOR_HOST` branch is what made every script runnable without a service account
+key), `seed/backfill-owner.mjs`, `seed/link-app-users.ts`, the emulator ruleset mirror, and the
+rules suite. The emulator now holds Jacky's three templates, five orgs, nine contacts, and all
+1,233 people with the 21 confirmed app links.
+
+**Phase 6 complete, 2026-08-25.** The People page.
+
+- `src/data/segments.ts`: the five saved segments as pure predicates over the loaded set.
+  Deliberately generic. The waitlist segment matches any question whose text mentions a waitlist
+  rather than naming a partner, because a partner name in application code would break PRD
+  guardrail 6. It still returns exactly the 290 it should.
+- `src/data/types.ts` gained `Person` and `Registration` as the canonical shapes, and
+  `seed/import-luma-guests.ts` now imports them rather than keeping its own copy. Two hand-kept
+  copies would have drifted the first time a field was added, silently, since the importer is the
+  only writer.
+- Seam additions `listPeople` / `getPerson` / `updatePerson`, in both implementations.
+  `PersonEdit` is `notes`, `followUp`, and `tags` only: everything else is derived, so letting a
+  component patch it would be undone by the next import.
+- `PeoplePage` and `PersonDetailPage`, wired at `/app/people`, with a People nav entry.
+- Amplitude `hp_people_list_viewed`, `hp_person_viewed`, `hp_person_note_saved`. Prefixed `hp_`
+  unlike the names in the Guest CRM Plan, so all seven events share one scheme.
+
+Verified against the emulator signed in as the real owner uid, through `firebaseApi` and the
+owner-scoped ruleset: 1,233 of 1,233 listed, the referral segment returns 59 ranked with Vicki at
+16 and Julia Barfield at 12 exactly as the brain repo's segment README says, a note typed in the
+UI read back from Firestore, and `npm run test:rules` green at 72 of 72.
+
+Two fixes the browser caught that a type checker could not: the filter selects inherit `w-full`
+from the shared input base and each claimed a full row until boxed, and the detail page showed
+"Events 2" directly above a "3 events" heading, because `eventCount` counts only what someone
+signed up for while the history lists invitations and declines too. Both numbers were right and
+the pair read as a contradiction, so each is now named for what it is.

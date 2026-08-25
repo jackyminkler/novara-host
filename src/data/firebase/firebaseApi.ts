@@ -20,6 +20,7 @@ import type {
   MomentInput,
   OrgInput,
   PartyInput,
+  PersonEdit,
   RunItemInput,
   TaskInput,
 } from '../api'
@@ -34,6 +35,7 @@ import type {
   LogEntry,
   Org,
   Party,
+  Person,
   RunItem,
   Task,
   Template,
@@ -53,6 +55,7 @@ const CONTACTS = 'hp_contacts'
 const AVAILABILITY = 'hp_availability'
 const MOMENTS = 'hp_moments'
 const TOKENS = 'hp_guestTokens'
+const PEOPLE = 'hp_people'
 
 const sub = (eventId: string, name: string) => collection(db, EVENTS, eventId, name)
 
@@ -492,6 +495,22 @@ export const firebaseApi: HostApi = {
 
   async deleteMoment(momentId) {
     await deleteDoc(doc(db, MOMENTS, momentId))
+  },
+
+  // CRM-1, people
+
+  async listPeople() {
+    const people = await readOwned<Person>(PEOPLE)
+    return people.sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))
+  },
+
+  async getPerson(personId) {
+    const snap = await getDoc(doc(db, PEOPLE, personId))
+    return snap.exists() ? withId<Person>(snap) : null
+  },
+
+  async updatePerson(personId: string, patch: PersonEdit) {
+    await updateDoc(doc(db, PEOPLE, personId), patch)
   },
 
   // F11, recap

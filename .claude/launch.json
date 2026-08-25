@@ -4,8 +4,21 @@
     {
       "name": "novara-host-mock",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:mock"],
+      "runtimeArgs": [
+        "run",
+        "dev:mock"
+      ],
       "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "novara-host-emu",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emu"
+      ],
+      "port": 5174,
       "autoPort": true
     }
   ]

@@ -3,7 +3,7 @@
  * `--offline` never loads firebase-admin and never needs credentials.
  */
 import { adminDb } from './admin.mjs'
-import type { Person } from './import-luma-guests.ts'
+import type { PersonDoc } from './import-luma-guests.ts'
 
 const COLLECTION = 'hp_people'
 const BATCH_LIMIT = 500
@@ -17,19 +17,19 @@ const idsByEmail = new Map<string, string>()
  * instead of 1,200 round trips, and the merge needs the whole set anyway.
  */
 export async function loadExistingPeople(
-  people: Map<string, Person>,
+  people: Map<string, PersonDoc>,
   ownerUid: string,
 ): Promise<number> {
   const snap = await adminDb().collection(COLLECTION).where('ownerUid', '==', ownerUid).get()
   for (const doc of snap.docs) {
-    const person = doc.data() as Person
+    const person = doc.data() as PersonDoc
     idsByEmail.set(person.email, doc.id)
     people.set(person.email, person)
   }
   return snap.size
 }
 
-export async function writePeople(people: Map<string, Person>, ownerUid: string): Promise<number> {
+export async function writePeople(people: Map<string, PersonDoc>, ownerUid: string): Promise<number> {
   const store = adminDb()
   const entries = [...people.values()]
 
