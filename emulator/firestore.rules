@@ -8,58 +8,91 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Novara host platform (hp_ collections). Hosts only; guests go through
+    // the hpGuest* Cloud Functions with the Admin SDK and never hit rules.
     function hpIsHost() {
       return request.auth != null
         && request.auth.uid in get(/databases/$(database)/documents/hp_config/allowlist).data.uids;
     }
 
+    // On the allowlist AND the document is yours. Read, update and delete test
+    // the stored document; create tests the incoming one.
+    function hpOwns() {
+      return hpIsHost() && resource.data.ownerUid == request.auth.uid;
+    }
+    function hpOwnsNew() {
+      return hpIsHost() && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Event subcollections inherit the parent event's owner. Explicit path,
+    // never a collection-group match: the real ruleset is shared with the
+    // consumer app.
+    function hpOwnsEvent(eventId) {
+      return hpIsHost()
+        && get(/databases/$(database)/documents/hp_events/$(eventId)).data.ownerUid == request.auth.uid;
+    }
+
     match /hp_config/{docId} {
       allow read: if hpIsHost();
-      allow write: if false;
+      allow write: if false; // allowlist edits happen in the console in M0
     }
 
     match /hp_orgs/{orgId} {
-      allow read, write: if hpIsHost();
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
     }
 
     match /hp_events/{eventId} {
-      allow read, write: if hpIsHost();
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
 
       match /parties/{partyId} {
-        allow read, write: if hpIsHost();
+        allow read, write: if hpOwnsEvent(eventId);
       }
       match /tasks/{taskId} {
-        allow read, write: if hpIsHost();
+        allow read, write: if hpOwnsEvent(eventId);
       }
       match /runOfShow/{itemId} {
-        allow read, write: if hpIsHost();
+        allow read, write: if hpOwnsEvent(eventId);
       }
       match /crew/{crewId} {
-        allow read, write: if hpIsHost();
+        allow read, write: if hpOwnsEvent(eventId);
       }
       match /log/{entryId} {
-        allow read, write: if hpIsHost();
+        allow read, write: if hpOwnsEvent(eventId);
       }
     }
 
     match /hp_templates/{templateId} {
-      allow read, write: if hpIsHost();
-    }
-
-    match /hp_availability/{blockId} {
-      allow read, write: if hpIsHost();
-    }
-
-    match /hp_moments/{momentId} {
-      allow read, write: if hpIsHost();
-    }
-
-    match /hp_guestTokens/{tokenId} {
-      allow read, write: if hpIsHost();
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
     }
 
     match /hp_contacts/{contactId} {
-      allow read, write: if hpIsHost();
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    match /hp_availability/{blockId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    match /hp_moments/{momentId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    match /hp_guestTokens/{tokenId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    // New this sprint. The guest CRM: people who attend events, with per-event
+    // registration history. Host-side only; guests never read or write it.
+    match /hp_people/{personId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
     }
 
     // Mirrors the shared ruleset's default deny for everything unmatched.

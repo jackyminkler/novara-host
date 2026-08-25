@@ -62,3 +62,23 @@ React 18 plus Vite, **TypeScript**, Tailwind 4, Firebase (Auth, Firestore, Funct
 6. `npx tsc --noEmit` and `npm run build` both pass.
 
 Keep this file short. When a durable convention emerges during the build, add one concise line here rather than re-explaining it in chat next session.
+
+## Matching
+
+The matching algorithm has one source of truth: **`MATCHING.md`** at the repo root.
+
+Read it before changing anything in a matching path. It covers the shipped scoring core, the
+dimension set and weights, hard constraints versus weights, the selection modes, the status
+board of what is and is not implemented, the settled decisions with dates, and a list of traps
+that each produced real defects in production or in a live event.
+
+Readable version: https://claude.ai/code/artifact/6a055630-c583-4f58-94bf-ec5b4a69add5
+
+If the code and `MATCHING.md` disagree, the code is right and the document needs correcting.
+
+**Filing decisions (compaction-proof rule).** When a matching decision is made in this
+checkout — a weight changed, a rule settled, a tolerance tuned, a trap discovered — append a
+dated block to `MATCHING_INBOX.md` (repo root) and include it IN THE SAME COMMIT as the code
+change. Never defer filing to the end of the session: a compacted or interrupted session
+loses anything it was still meaning to do. `MATCHING.md` is generated — never hand-edit it;
+Cowork sweeps the inbox into it.

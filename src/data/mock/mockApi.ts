@@ -43,6 +43,19 @@ function persist() {
   }
 }
 
+/**
+ * Mock mode has one signed-in host (AuthProvider hands out the same uid), so
+ * this is a constant rather than a lookup. It is still applied everywhere the
+ * Firebase implementation applies its filter: a fixture row belonging to
+ * anyone else must be invisible here too, or mock mode would quietly disagree
+ * with production about what a host can see.
+ */
+const MOCK_UID = 'mock-host-uid'
+
+/** Same scoping the tightened rules enforce, applied to the in-memory store. */
+const owned = <T extends { ownerUid: string }>(rows: T[]): T[] =>
+  rows.filter((row) => row.ownerUid === MOCK_UID)
+
 let counter = 0
 function id(prefix: string): string {
   counter += 1
@@ -81,12 +94,18 @@ function nextOrder(items: { order: number }[]): number {
 export const mockApi: HostApi = {
   // F2, partner directory
 
-  listOrgs: () => ok([...store.orgs].sort((a, b) => a.name.localeCompare(b.name))),
+  listOrgs: () => ok(owned(store.orgs).sort((a, b) => a.name.localeCompare(b.name))),
 
   getOrg: (orgId) => ok(store.orgs.find((o) => o.id === orgId) ?? null),
 
   createOrg: (input: OrgInput, uid: string) => {
-    const org: Org = { ...clone(input), id: id('org'), createdAt: new Date().toISOString(), createdBy: uid }
+    const org: Org = {
+      ...clone(input),
+      id: id('org'),
+      createdAt: new Date().toISOString(),
+      createdBy: uid,
+      ownerUid: uid,
+    }
     store.orgs.push(org)
     persist()
     return ok(org.id)
@@ -109,7 +128,7 @@ export const mockApi: HostApi = {
 
   listEvents: () =>
     ok(
-      [...store.events].sort((a, b) => {
+      owned(store.events).sort((a, b) => {
         // Live and planning first, wrapped last, then newest first.
         const rank = (e: EventDoc) => (e.status === 'wrapped' ? 1 : 0)
         return rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt)
@@ -125,7 +144,7 @@ export const mockApi: HostApi = {
       tasks: [...listOf(store.tasks, eventId)].sort((a, b) => a.order - b.order),
       runOfShow: [...listOf(store.runOfShow, eventId)].sort((a, b) => a.time.localeCompare(b.time) || a.order - b.order),
       crew: listOf(store.crew, eventId),
-      orgs: store.orgs,
+      orgs: owned(store.orgs),
     }
     return ok(bundle)
   },
@@ -136,6 +155,7 @@ export const mockApi: HostApi = {
 
     const event: EventDoc = {
       id: eventId,
+      ownerUid: uid,
       title: input.title,
       status: 'planning',
       description: input.description,
@@ -220,7 +240,7 @@ export const mockApi: HostApi = {
     return ok(undefined)
   },
 
-  listTemplates: () => ok(store.templates),
+  listTemplates: () => ok(owned(store.templates)),
 
   // F4, dates
 
@@ -313,6 +333,7 @@ export const mockApi: HostApi = {
     }
     const fresh: GuestToken = {
       id: token(),
+      ownerUid: MOCK_UID,
       eventId,
       scope,
       subjectId,
@@ -405,7 +426,7 @@ export const mockApi: HostApi = {
 
   listContacts: () =>
     ok(
-      [...store.contacts].sort((a, b) => {
+      owned(store.contacts).sort((a, b) => {
         // Open follow-ups first, soonest due at the top, then newest capture.
         const openA = a.followUp && !a.followUp.done
         const openB = b.followUp && !b.followUp.done
@@ -416,7 +437,13 @@ export const mockApi: HostApi = {
     ),
 
   createContact: (input: ContactInput, uid: string) => {
-    const contact = { ...clone(input), id: id('ct'), capturedAt: new Date().toISOString(), capturedBy: uid }
+    const contact = {
+      ...clone(input),
+      id: id('ct'),
+      capturedAt: new Date().toISOString(),
+      capturedBy: uid,
+      ownerUid: uid,
+    }
     store.contacts.push(contact)
     persist()
     return ok(contact.id)
@@ -437,10 +464,10 @@ export const mockApi: HostApi = {
 
   // F10, calendar
 
-  listAvailability: () => ok(store.availability),
+  listAvailability: () => ok(owned(store.availability)),
 
   createAvailability: (input: AvailabilityInput) => {
-    const block = { ...input, id: id('av') }
+    const block = { ...input, id: id('av'), ownerUid: MOCK_UID }
     store.availability.push(block)
     persist()
     return ok(block.id)
@@ -452,10 +479,10 @@ export const mockApi: HostApi = {
     return ok(undefined)
   },
 
-  listMoments: () => ok(store.moments),
+  listMoments: () => ok(owned(store.moments)),
 
   createMoment: (input: MomentInput) => {
-    const moment = { ...input, id: id('mo') }
+    const moment = { ...input, id: id('mo'), ownerUid: MOCK_UID }
     store.moments.push(moment)
     persist()
     return ok(moment.id)

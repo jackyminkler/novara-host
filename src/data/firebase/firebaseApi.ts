@@ -11,7 +11,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import { db } from '../../lib/firebase'
+import { auth, db } from '../../lib/firebase'
 import type {
   HostApi,
   AvailabilityInput,
@@ -65,6 +65,33 @@ async function readAll<T>(ref: ReturnType<typeof collection>): Promise<T[]> {
   return snap.docs.map((d) => withId<T>(d))
 }
 
+/**
+ * The signed-in host. Reads take it from auth rather than from an argument,
+ * because every list* on the seam is parameterless and threading a uid through
+ * each one would touch every call site in the app. Writes keep passing it
+ * explicitly, which is the existing convention.
+ */
+function currentUid(): string {
+  const uid = auth.currentUser?.uid
+  // A read before sign-in is a bug, not an empty result: returning nothing
+  // would look like an empty workspace instead of surfacing the mistake.
+  if (!uid) throw new Error('not signed in')
+  return uid
+}
+
+/**
+ * Read one top-level hp_ collection, scoped to its owner.
+ *
+ * The filter is not only a convenience: the tightened rules evaluate
+ * `resource.data.ownerUid == request.auth.uid` on a list, so a query without
+ * this constraint is rejected outright rather than quietly returning another
+ * host's rows.
+ */
+async function readOwned<T>(name: string): Promise<T[]> {
+  const snap = await getDocs(query(collection(db, name), where('ownerUid', '==', currentUid())))
+  return snap.docs.map((d) => withId<T>(d))
+}
+
 const now = () => new Date().toISOString()
 
 /** 24 characters of base62, comfortably past the 22 the PRD asks for. */
@@ -82,7 +109,7 @@ export const firebaseApi: HostApi = {
   // F2, partner directory
 
   async listOrgs() {
-    const orgs = await readAll<Org>(collection(db, ORGS))
+    const orgs = await readOwned<Org>(ORGS)
     return orgs.sort((a, b) => a.name.localeCompare(b.name))
   },
 
@@ -92,7 +119,14 @@ export const firebaseApi: HostApi = {
   },
 
   async createOrg(input: OrgInput, uid: string) {
-    const ref = await addDoc(collection(db, ORGS), { ...input, createdAt: now(), createdBy: uid })
+    // createdBy keeps its original meaning; ownerUid is the field the rules and
+    // every query read, and it is uniform across all hp_ collections.
+    const ref = await addDoc(collection(db, ORGS), {
+      ...input,
+      createdAt: now(),
+      createdBy: uid,
+      ownerUid: uid,
+    })
     return ref.id
   },
 
@@ -107,7 +141,7 @@ export const firebaseApi: HostApi = {
   // F3, events
 
   async listEvents() {
-    const events = await readAll<EventDoc>(collection(db, EVENTS))
+    const events = await readOwned<EventDoc>(EVENTS)
     const rank = (e: EventDoc) => (e.status === 'wrapped' ? 1 : 0)
     return events.sort((a, b) => rank(a) - rank(b) || b.createdAt.localeCompare(a.createdAt))
   },
@@ -123,7 +157,7 @@ export const firebaseApi: HostApi = {
       readAll<Task>(sub(eventId, 'tasks')),
       readAll<RunItem>(sub(eventId, 'runOfShow')),
       readAll<CrewMember>(sub(eventId, 'crew')),
-      readAll<Org>(collection(db, ORGS)),
+      readOwned<Org>(ORGS),
     ])
 
     const bundle: EventBundle = {
@@ -156,6 +190,7 @@ export const firebaseApi: HostApi = {
       recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
       templateId: input.templateId,
       hostUid: uid,
+      ownerUid: uid,
       hostDisplayName: input.hostDisplayName,
       createdAt: now(),
     })
@@ -221,14 +256,20 @@ export const firebaseApi: HostApi = {
       const snap = await getDocs(sub(eventId, name))
       snap.docs.forEach((d) => batch.delete(d.ref))
     }
-    const tokens = await getDocs(query(collection(db, TOKENS), where('eventId', '==', eventId)))
+    const tokens = await getDocs(
+      query(
+        collection(db, TOKENS),
+        where('ownerUid', '==', currentUid()),
+        where('eventId', '==', eventId),
+      ),
+    )
     tokens.docs.forEach((d) => batch.delete(d.ref))
     batch.delete(doc(db, EVENTS, eventId))
     await batch.commit()
   },
 
   async listTemplates() {
-    const templates = await readAll<Template>(collection(db, TEMPLATES))
+    const templates = await readOwned<Template>(TEMPLATES)
     return templates.sort((a, b) => a.name.localeCompare(b.name))
   },
 
@@ -292,7 +333,12 @@ export const firebaseApi: HostApi = {
     const batch = writeBatch(db)
     batch.delete(doc(sub(eventId, 'parties'), partyId))
     const tokens = await getDocs(
-      query(collection(db, TOKENS), where('eventId', '==', eventId), where('subjectId', '==', partyId)),
+      query(
+        collection(db, TOKENS),
+        where('ownerUid', '==', currentUid()),
+        where('eventId', '==', eventId),
+        where('subjectId', '==', partyId),
+      ),
     )
     tokens.docs.forEach((d) => batch.update(d.ref, { revoked: true }))
     await batch.commit()
@@ -309,6 +355,7 @@ export const firebaseApi: HostApi = {
     const existing = await getDocs(
       query(
         collection(db, TOKENS),
+        where('ownerUid', '==', currentUid()),
         where('eventId', '==', eventId),
         where('scope', '==', scope),
         where('subjectId', '==', subjectId),
@@ -319,6 +366,7 @@ export const firebaseApi: HostApi = {
 
     const id = makeToken()
     const record: Omit<GuestToken, 'id'> = {
+      ownerUid: currentUid(),
       eventId,
       scope,
       subjectId,
@@ -390,7 +438,7 @@ export const firebaseApi: HostApi = {
   // F8, meeting capture
 
   async listContacts() {
-    const contacts = await readAll<CapturedContact>(collection(db, CONTACTS))
+    const contacts = await readOwned<CapturedContact>(CONTACTS)
     return contacts.sort((a, b) => {
       const openA = Boolean(a.followUp && !a.followUp.done)
       const openB = Boolean(b.followUp && !b.followUp.done)
@@ -401,7 +449,12 @@ export const firebaseApi: HostApi = {
   },
 
   async createContact(input: ContactInput, uid: string) {
-    const ref = await addDoc(collection(db, CONTACTS), { ...input, capturedAt: now(), capturedBy: uid })
+    const ref = await addDoc(collection(db, CONTACTS), {
+      ...input,
+      capturedAt: now(),
+      capturedBy: uid,
+      ownerUid: uid,
+    })
     return ref.id
   },
 
@@ -416,11 +469,11 @@ export const firebaseApi: HostApi = {
   // F10, calendar
 
   async listAvailability() {
-    return readAll<AvailabilityBlock>(collection(db, AVAILABILITY))
+    return readOwned<AvailabilityBlock>(AVAILABILITY)
   },
 
   async createAvailability(input: AvailabilityInput) {
-    const ref = await addDoc(collection(db, AVAILABILITY), input)
+    const ref = await addDoc(collection(db, AVAILABILITY), { ...input, ownerUid: currentUid() })
     return ref.id
   },
 
@@ -429,11 +482,11 @@ export const firebaseApi: HostApi = {
   },
 
   async listMoments() {
-    return readAll<CitywideMoment>(collection(db, MOMENTS))
+    return readOwned<CitywideMoment>(MOMENTS)
   },
 
   async createMoment(input: MomentInput) {
-    const ref = await addDoc(collection(db, MOMENTS), input)
+    const ref = await addDoc(collection(db, MOMENTS), { ...input, ownerUid: currentUid() })
     return ref.id
   },
 

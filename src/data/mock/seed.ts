@@ -58,6 +58,7 @@ function org(
     notes: '',
     createdAt: NOW,
     createdBy: HOST,
+    ownerUid: HOST,
     ...extra,
   }
 }
@@ -148,6 +149,7 @@ export function buildStore(): MockStore {
 
   const presidio: EventDoc = {
     id: 'presidio-sunrise-five',
+    ownerUid: HOST,
     title: 'Presidio sunrise five',
     status: 'planning',
     description:
@@ -187,6 +189,7 @@ export function buildStore(): MockStore {
 
   const marina: EventDoc = {
     id: 'marina-track-social',
+    ownerUid: HOST,
     title: 'Marina track social',
     status: 'wrapped',
     description:
@@ -478,6 +481,7 @@ export function buildStore(): MockStore {
       followUp: { due: '2026-08-19', done: false },
       capturedAt: '2026-07-16T20:10:00.000Z',
       capturedBy: HOST,
+      ownerUid: HOST,
     },
     {
       id: 'ct-danny',
@@ -488,6 +492,7 @@ export function buildStore(): MockStore {
       followUp: { due: '2026-08-21', done: false },
       capturedAt: '2026-07-16T20:25:00.000Z',
       capturedBy: HOST,
+      ownerUid: HOST,
     },
     {
       id: 'ct-jordan',
@@ -498,21 +503,23 @@ export function buildStore(): MockStore {
       followUp: { due: '2026-07-18', done: true },
       capturedAt: '2026-07-16T20:40:00.000Z',
       capturedBy: HOST,
+      ownerUid: HOST,
     },
   ]
 
   const availability: AvailabilityBlock[] = [
-    { id: 'av1', kind: 'away', startDate: '2026-08-13', endDate: '2026-08-16', label: 'Away' },
+    { id: 'av1', ownerUid: HOST, kind: 'away', startDate: '2026-08-13', endDate: '2026-08-16', label: 'Away' },
   ]
 
   const moments: CitywideMoment[] = [
-    { id: 'mo1', name: 'Outside Lands', startDate: '2026-08-07', endDate: '2026-08-09' },
-    { id: 'mo2', name: 'SF Tech Week', startDate: '2026-10-05', endDate: '2026-10-11' },
+    { id: 'mo1', ownerUid: HOST, name: 'Outside Lands', startDate: '2026-08-07', endDate: '2026-08-09' },
+    { id: 'mo2', ownerUid: HOST, name: 'SF Tech Week', startDate: '2026-10-05', endDate: '2026-10-11' },
   ]
 
   const tokens: GuestToken[] = Object.entries(parties).flatMap(([eventId, list]) =>
     list.map((p) => ({
       id: p.tokenId as string,
+      ownerUid: HOST,
       eventId,
       scope: 'party' as const,
       subjectId: p.id,

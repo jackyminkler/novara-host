@@ -2,6 +2,48 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-25, multi-tenant foundation verified against the emulator
+
+CRM sprint 1, step 1. The ownership work that was written last session is now proven rather
+than argued.
+
+- **The emulator is the test bed, not production.** `seed/admin.mjs` is one Admin SDK handle
+  for every seed and import script: with `FIRESTORE_EMULATOR_HOST` set it initializes with no
+  credentials at all, otherwise it uses application default credentials. Before this, every
+  script called `applicationDefault()` unconditionally and failed on a machine with no service
+  account key, which is what had blocked step 0 for a week. Each script now prints which
+  database it is about to touch as its first line.
+- **`seed/backfill-owner.mjs`**, dry run by default. Walks every top-level `hp_` collection,
+  skips documents that already carry `ownerUid`, and copies the legacy owner field
+  (`createdBy`, `hostUid`, `capturedBy`) across where one exists. Guest tokens take the owner
+  of the event they open rather than whoever ran the script, which is the only answer that
+  stays right once a second host has events. Verified on six planted pre-`ownerUid` documents:
+  six stamped on the first run, zero on the second.
+- **`seed/seed.mjs` was writing `hp_orgs` with no owner at all.** Templates had `ownerUid`,
+  orgs did not, so every seeded partner would have been invisible the moment the rules
+  tightened. Fixed, and the upsert now matches by name then narrows to this owner, adopting a
+  pre-`ownerUid` document rather than duplicating it. Firestore cannot query for a missing
+  field, which is why the narrowing happens in memory rather than in the query.
+- **`emulator/firestore.rules` now mirrors the block in `docs/pending-rules.md`** exactly,
+  ownership conditions and `hp_people` included. The emulator ruleset is the rehearsal for what
+  Jacky applies through the consumer repo.
+- **Rules tests exist now.** `tests/ownership.rules.test.ts`, 72 cases through
+  `@firebase/rules-unit-testing` against the real rules engine: the owner reads and lists its
+  own documents in all eight collections, a second allowlisted host cannot read, cannot list
+  unfiltered, cannot list by claiming the owner's uid, cannot overwrite, cannot reach a
+  subcollection under someone else's event, and cannot plant a document stamped with another
+  owner. A non-allowlisted account and a signed-out visitor get nothing. Confirmed meaningful
+  by running the same suite against the previous `hpIsHost()`-only ruleset: 33 of the 72 fail.
+- **Reverses the 2026-08-25 "rules tests deferred" decision.** That call traded the suite for
+  speed and accepted that nothing would catch a later regression. Jacky asked for emulator-backed
+  proof of isolation this session, which is the same thing, so the suite got built. The uniform
+  `ownerUid` field name stays regardless: it is the right shape either way.
+
+**Content gap, for Jacky.** `seed/content.json` carries three templates and **five** orgs. The
+work order says seven. The two missing partners are content, not code, so nothing was invented
+to fill the gap. Ten `TODO` markers are still in that file, mostly real names and emails for the
+DJ crew and Circe contacts.
+
 ## 2026-08-21, sign-in fixed for in-app browsers, and cache headers
 
 A second host opened the link from Messages on iOS and got "Unable to process request due to missing initial state" from the Firebase auth handler. Two causes, both fixed.

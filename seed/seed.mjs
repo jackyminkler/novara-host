@@ -5,6 +5,7 @@
 // (PRD build guardrail 6).
 //
 //   GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node seed/seed.mjs
+//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node seed/seed.mjs   against the emulator
 //   node seed/seed.mjs --dry-run     to print what would be written
 //
 // Re-running is safe: documents are matched by name and updated in place, so
@@ -13,8 +14,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { initializeApp, applicationDefault } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { adminDb, announceTarget } from './admin.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const dryRun = process.argv.includes('--dry-run')
@@ -32,23 +32,33 @@ if (!content.ownerUid || content.ownerUid === 'REPLACE_WITH_HOST_UID') {
   process.exit(1)
 }
 
-initializeApp({ credential: applicationDefault() })
-const db = getFirestore()
+announceTarget()
+const db = adminDb()
 const now = new Date().toISOString()
 
 /** Find an existing doc by name so a second run updates instead of duplicating. */
 async function upsert(collection, name, data) {
-  const existing = await db.collection(collection).where('name', '==', name).limit(1).get()
+  // Matched by name, then narrowed to this owner: two hosts can each have a
+  // template called "Sunrise run" and neither should overwrite the other's.
+  // Firestore cannot query for a missing field, so documents written before
+  // ownerUid existed are found by name and adopted here rather than
+  // duplicated. The write below stamps the owner on them.
+  const byName = await db.collection(collection).where('name', '==', name).get()
+  const match = byName.docs.find((doc) => {
+    const owner = doc.get('ownerUid')
+    return owner === undefined || owner === content.ownerUid
+  })
+
   if (dryRun) {
-    console.log(`${existing.empty ? 'create' : 'update'} ${collection}: ${name}`)
+    console.log(`${match ? 'update' : 'create'} ${collection}: ${name}`)
     return
   }
-  if (existing.empty) {
+  if (match) {
+    await match.ref.set(data, { merge: true })
+    console.log(`updated ${collection}: ${name}`)
+  } else {
     await db.collection(collection).add(data)
     console.log(`created ${collection}: ${name}`)
-  } else {
-    await existing.docs[0].ref.set(data, { merge: true })
-    console.log(`updated ${collection}: ${name}`)
   }
 }
 
@@ -68,6 +78,9 @@ for (const template of content.templates ?? []) {
 
 for (const org of content.orgs ?? []) {
   await upsert('hp_orgs', org.name, {
+    // ownerUid is the field the rules and every list query read. createdBy
+    // keeps its original meaning; the two are the same person at seed time.
+    ownerUid: content.ownerUid,
     name: org.name,
     type: org.type,
     description: org.description ?? '',

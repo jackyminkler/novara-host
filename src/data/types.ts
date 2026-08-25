@@ -36,6 +36,13 @@ export interface CustomField {
 
 export interface Org {
   id: string
+  /**
+   * The host who owns this document. One field name across every top-level hp_
+   * collection, because the security rules and every list query read it, and a
+   * per-collection name is a hand-verification trap. Collections that already had
+   * an owner-ish field (createdBy, hostUid, capturedBy) keep it unchanged.
+   */
+  ownerUid: string
   name: string
   type: OrgType
   description: string
@@ -92,6 +99,7 @@ export interface EventRecap {
 
 export interface EventDoc {
   id: string
+  ownerUid: string
   title: string
   status: EventStatus
   description: string
@@ -225,6 +233,7 @@ export interface Template {
 
 export interface CapturedContact {
   id: string
+  ownerUid: string
   name: string
   handles: {
     instagram?: string
@@ -243,6 +252,7 @@ export interface CapturedContact {
 
 export interface AvailabilityBlock {
   id: string
+  ownerUid: string
   kind: 'away' | 'open'
   startDate: string
   endDate: string
@@ -251,6 +261,7 @@ export interface AvailabilityBlock {
 
 export interface CitywideMoment {
   id: string
+  ownerUid: string
   name: string
   startDate: string
   endDate: string
@@ -258,6 +269,7 @@ export interface CitywideMoment {
 
 export interface GuestToken {
   id: string
+  ownerUid: string
   eventId: string
   scope: TokenScope
   subjectId: string

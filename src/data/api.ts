@@ -21,7 +21,7 @@ import type {
 // Inputs are the writable slices of each shape. Ids, timestamps, and
 // ownership are set by the implementation, never by a component.
 
-export type OrgInput = Omit<Org, 'id' | 'createdAt' | 'createdBy'>
+export type OrgInput = Omit<Org, 'id' | 'createdAt' | 'createdBy' | 'ownerUid'>
 
 export interface CreateEventInput {
   title: string
@@ -55,9 +55,9 @@ export interface RunItemInput {
   notes: string
 }
 
-export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy'>
-export type AvailabilityInput = Omit<AvailabilityBlock, 'id'>
-export type MomentInput = Omit<CitywideMoment, 'id'>
+export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy' | 'ownerUid'>
+export type AvailabilityInput = Omit<AvailabilityBlock, 'id' | 'ownerUid'>
+export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
 
 /**
  * The one seam between the app and its storage. Components import this, never

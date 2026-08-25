@@ -34,3 +34,5 @@ logs/
 
 # Seed content is the host's own data, never committed.
 seed/content.json
+# Real captured contacts. Personal content is data, never code (PRD guardrail 6).
+seed/contacts.json
