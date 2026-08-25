@@ -11,82 +11,88 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
+Nothing pending.
+
+## Applied
+
 ### Owner scoping on every `hp_` collection, plus `hp_people`
 
-Written 2026-08-25 for CRM sprint 1 (`docs/CRM_Build_Sprint_1_workorder.md` steps 1 and 2).
-This is one batch on purpose: three changes that would otherwise be three separate handovers.
+Applied 2026-08-25 through the consumer repo (PR #201, merged as `dbf5b57`) and deployed the same
+day. The host platform is multi-tenant in production from this point: being on the allowlist is no
+longer enough to read a document, it has to be yours.
 
-**Where the rules live, and a near miss worth keeping.** Verified 2026-08-25 at pinned commits,
-not at "main":
+**Verified from this repo**, against the consumer repo pinned at `bbba78e`: the applied block
+carries `hpIsHost()`, `hpOwns()`, `hpOwnsNew()`, `hpOwnsEvent(eventId)`, owner-scoped blocks on
+`hp_orgs`, `hp_events`, `hp_templates`, `hp_contacts`, `hp_availability`, `hp_moments`,
+`hp_guestTokens` and the new `hp_people`, all five event subcollections under `hpOwnsEvent`, and
+`hp_config` still on a plain `hpIsHost()` read. Normalised for whitespace and comments it is
+**identical to `emulator/firestore.rules`**, which is the file `tests/ownership.rules.test.ts`
+runs its 72 cases against. What was tested is what shipped.
 
-```
-git show 3697132:firebase/firestore.rules | grep -c "match /hp_"   ->  0
-git show f898233:firebase/firestore.rules | grep -c "match /hp_"   ->  8
-```
+**Verified elsewhere, not from here:** the deployed ruleset was read back from `novarasocial-dev`
+by another session via the Firebase MCP and matches. This repo has no Firebase MCP and no
+production credentials, so that is relayed, not first-hand.
 
-The `hp_` blocks were applied to the live project on 2026-08-19 and 2026-08-20 and were serving
-production the whole time, but they were **not on `main`**. Commit `b88363f` ("Commit the live hp_
-rules batch 1 that was only in the working tree") sat on an unmerged branch and was not an
-ancestor of `main`'s tip. `main` carried zero `hp_` match blocks from 2026-08-18 until PR #199
-merged at 2026-08-24 22:56, which finally pulled `b88363f` into `main`'s history.
+**Not verified by anyone directly:** that `ownerUid` is present on the live documents. The backfill
+dry run planned 3 documents (`hp_orgs` 1, `hp_events` 1, `hp_guestTokens` 1), Jacky ran `--write`,
+and two were read back with `ownerUid` copied from the legacy `hostUid` / `createdBy` rather than
+defaulted to the `--owner` fallback. There is strong indirect evidence too: with these rules live a
+document missing `ownerUid` is denied to everyone, so a workspace that still loads is a passing
+test. Worth confirming deliberately rather than leaving as an inference.
 
-For those six days, `firebase deploy --only firestore` from `~/novara` would have overwritten the
-live ruleset with one containing none of the eight blocks, locking the host app out of every one
-of its collections. That window is closed: `main` carries all eight today, and applying the block
-below through the consumer repo is safe.
+**The exposure this closed was real, not theoretical.** One of the three backfilled documents was
+the Circe org, carrying `"via": "Anna"`. That is a private relationship note, and it was readable
+by the second allowlisted account for as long as both UIDs sat on the list. This entry was written
+about exactly that field.
 
-**The lesson is to pin the commit, not to prefer one tool.** This entry briefly recorded the
-opposite of the above, on the theory that the original finding was a bad read and that
-`git log -S` should have been trusted over `grep`. Both halves were wrong. The two checks ran
-either side of the PR #199 merge and each was accurate for the commit it saw; `git log -S "hp_"`
-returns nothing at `3697132` too, because `b88363f` was not in that history at all. `grep` and
-`log -S` agreed at both points. The variable was never the tool, it was which commit `HEAD`
-pointed at. When recording a rules finding, record `git rev-parse HEAD` with it: "main" is a
-moving target whenever another session is working in that repo.
+**The near miss that justifies the no-rules-from-this-repo rule.** Verified at pinned commits:
+`git show 3697132:firebase/firestore.rules | grep -c "match /hp_"` returns 0, and the same at
+`f898233` returns 8. The `hp_` blocks were serving production from 2026-08-19, but commit
+`b88363f` that captured them sat on an unmerged branch and was not an ancestor of `main`. `main`
+carried zero `hp_` blocks from 2026-08-18 until PR #199 merged at 2026-08-24 22:56. For those six
+days, `firebase deploy --only firestore` from the consumer repo would have overwritten the live
+ruleset with one containing none of the eight, locking the host app out of every collection.
 
-**Do not apply this until the backfill has run.** The new condition reads `ownerUid` off each
-document, and every document written before this sprint has no such field. Applying the rules
-first locks the host out of her own data until the backfill finishes. The order is:
+Two process notes that came out of chasing that:
 
-1. `node seed/backfill-owner.mjs` (Admin SDK, bypasses rules, so it works either way). Dry run
-   by default; re-runnable.
-2. Read back a few documents and confirm `ownerUid` is present.
-3. Then apply the block below through the consumer repo.
-4. Sign in and confirm events, partners, templates, capture, and calendar all still load.
+- **Pin the commit.** Record `git rev-parse HEAD` with any finding about another repo. Two checks
+  of "main" an hour apart disagreed here, and both were correct for the commit they saw.
+- **Two disagreeing checks mean the thing changed at least as often as one was a misread.** This
+  entry briefly recorded the near miss as a bad read, with a tidy lesson attached, that
+  `git log -S` should be trusted over `grep`. Both halves were false: `log -S` returns nothing at
+  `3697132` too, because `b88363f` was not in that history. The tools agreed at both commits. A
+  wrong diagnosis dressed as a process improvement is worse than no lesson, because it gets reused.
 
-If step 4 fails, reverting is just restoring the previous `hpIsHost()`-only block; no data moved.
+<details><summary>The block as applied</summary>
 
-**Why now:** two UIDs are on the allowlist (`docs/build-log.md:15`), and today every allowlisted
-account reads every `hp_` collection, including the private `via` and `relationshipTerms` notes
-on partners. CRM sprint 1 imports 1,233 real people with their email addresses. That import
-must not land in a collection a second account can read.
-
-**Field convention:** every top-level `hp_` document carries `ownerUid`, one field name across
-all collections. Existing owner-ish fields (`hp_orgs.createdBy`, `hp_events.hostUid`,
-`hp_contacts.capturedBy`, `hp_templates.ownerUid`) keep their current meaning and are left
-alone; the backfill copies them into `ownerUid` where present. Uniformity is deliberate: with
-rules tests deferred this sprint, hand verification is the only check, and four different owner
-field names is exactly where a hand check goes wrong.
-
-**Subcollections** (`parties`, `tasks`, `runOfShow`, `crew`, `log`) carry no owner of their own
-and inherit the parent event's, via an explicit path lookup. Still no collection-group rule.
-
-**No composite index is needed.** Every `list*` becomes a single equality filter on `ownerUid`
-with no `orderBy` (`readAll` in `firebaseApi` does a plain `getDocs`, and all sorting happens in
-the components). Single-field indexes are automatic. The People page follows the same pattern:
-fetch the owner's people once, filter and sort in memory. At 1,233 documents that is the boring
-option and it needs no index; revisit if one host ever passes roughly 10,000 people.
+Copied out of the consumer repo at `bbba78e`, so this is what is actually deployed rather
+than what was proposed.
 
 ```
-// Novara host platform (hp_ collections). Hosts only; guests go through
-// the hpGuest* Cloud Functions with the Admin SDK and never hit rules.
+// ── Novara host platform (hp_ collections) ─────────────────────────
+//
+// Owned by the novara-host repo; blocks applied VERBATIM from its
+// docs/pending-rules.md (see CLAUDE.md §Shared Firebase Project).
+// Hosts only; guests go through the hpGuest* Cloud Functions with
+// the Admin SDK and never hit rules.
+//
+// 2026-08-25: owner scoping. Until now every allowlisted account could
+// read every other host's data, including the private `via` and
+// `relationshipTerms` notes on partners. Two UIDs are on the allowlist and
+// the guest CRM is about to import 1,233 real people with email addresses.
+// Applied only AFTER seed/backfill-owner.mjs stamped `ownerUid` on the
+// existing documents — these conditions read that field, so applying them
+// first would have locked the host out of her own data. Rehearsed against
+// the emulator in novara-host: tests/ownership.rules.test.ts, 72 cases
+// green; the same suite scores 33 failures against the hpIsHost()-only
+// form this replaces.
 function hpIsHost() {
   return request.auth != null
     && request.auth.uid in get(/databases/$(database)/documents/hp_config/allowlist).data.uids;
 }
 
-// On the allowlist AND the document is yours. Read, update and delete test the
-// stored document; create tests the incoming one.
+// On the allowlist AND the document is yours. Read, update and delete test
+// the stored document; create tests the incoming one.
 function hpOwns() {
   return hpIsHost() && resource.data.ownerUid == request.auth.uid;
 }
@@ -94,8 +100,10 @@ function hpOwnsNew() {
   return hpIsHost() && request.resource.data.ownerUid == request.auth.uid;
 }
 
-// Event subcollections inherit the parent event's owner. Explicit path, never
-// a collection-group match: this ruleset is shared with the consumer app.
+// Event subcollections inherit the parent event's owner. Explicit path,
+// never a collection-group match: this ruleset is shared with the consumer
+// app, and host subcollection names (parties, tasks, runOfShow, crew, log)
+// are NOT hp_-prefixed, so a collection-group rule would span both products.
 function hpOwnsEvent(eventId) {
   return hpIsHost()
     && get(/databases/$(database)/documents/hp_events/$(eventId)).data.ownerUid == request.auth.uid;
@@ -157,12 +165,14 @@ match /hp_guestTokens/{tokenId} {
   allow create: if hpOwnsNew();
 }
 
-// New this sprint. The guest CRM: people who attend events, with per-event
+// New 2026-08-25. The guest CRM: people who attend events, with per-event
 // registration history. Host-side only; guests never read or write it.
 match /hp_people/{personId} {
   allow read, update, delete: if hpOwns();
   allow create: if hpOwnsNew();
 }
+
+  }
 ```
 
 Notes:
@@ -175,7 +185,8 @@ Notes:
   onto every task and run-of-show item, which is more places to get wrong.
 - `hp_config` deliberately keeps the plain `hpIsHost()` read: the allowlist is shared, not owned.
 
-## Applied
+</details>
+
 
 ### M0 v2 collections, F10 to F13
 

@@ -1,15 +1,13 @@
 # Novara Matching Engine
 
-**Single source of truth.** Version 1.4.1, updated 2026-08-24.
+**Single source of truth.** Version 1.5.0, updated 2026-08-25.
 
 Generated from `content.py`. The published artifact and this file render from the same
 source, so they cannot disagree. When this document and the code disagree, the code wins
 and this gets corrected.
 
-> **Readable version:** https://claude.ai/code/artifact/6a055630-c583-4f58-94bf-ec5b4a69add5
->
-> Mirrored in `novara`, `novara-host` and `Novara-Brain`. The artifact has Plain / Math / Code
-> toggles per section; this file shows all three inline.
+> Mirrored in `novara`, `novara-host` and `Novara-Brain`. Artifact version has Plain / Math /
+> Code toggles per section; this file shows all three inline.
 
 ## Contents
 
@@ -38,7 +36,7 @@ It exists because the same algorithm had been rebuilt five times in three months
 ### How to use it
 
 - Every technical idea has three depths. **Plain** is the sentence you would say out loud. **Math** is the formula. **Code** is what actually runs. Switch depth per section, or set them all at once from the top.
-- Point any AI at this document, in Cowork, Claude Code, or chat. The markdown mirror `MATCHING.md` sits in `novara`, `novara-host` and `Novara-Brain`.
+- Point any AI at this document, in Cowork, Claude Code, or chat. The markdown mirror `MATCHING.md` sits in `novara`, `novara-host`, `novara-matching` and `Novara-Brain`, with a `MATCHING_INBOX.md` beside each one.
 - Section 08 is the status board: what is implemented, where, and how far along.
 - Section 09 is the decision log. Settled decisions carry a date. Open ones carry the numbers you need to settle them.
 
@@ -121,21 +119,31 @@ Every dimension is a pure function of two profiles returning a score between 0 a
 >
 > socialIntent and goal are structurally empty. Onboarding writes neither, and the schema itself says *null until a capture surface exists*. genderSoft does participate: onboarding step 7 captures gender and preference. Renormalization silently redistributes the empty 0.14, so for a fully onboarded pair the live weights sit nearer proximity 0.349 / pace 0.291 / availability 0.174 / runType 0.116 / genderSoft 0.070 than the published table. Not a bug, but nobody had written it down.
 
+> **The friend graph is deliberately not a dimension**
+>
+> Knowing someone promotes them. It is never one of the seven scores. Every dimension is renormalized over the weights that had data, and a social dimension always *has* data, since you either are friends or you are not, so it never drops out. A stranger would score 0 on a participating dimension and have that 0 dragged through the denominator: a penalty on strangers wearing a friend feature's clothes, and at launch nearly every pair is two strangers. So it is an additive bonus on the ranking key instead, `rankScore = lbScore + socialBonus`, with `friendBonus` 0.15 for a friend and `friendOfFriendBonus` 0.05 per mutual friend saturating at three, all Firestore-tunable and all zeroed in batch mode. `total` stays a pure fit number, a stranger's rankScore is exactly their lower bound, and because the bonus is applied after the `hardPass` filter it **cannot outscore a gate**. A friend who fails the pace gate is still not surfaced. Friendship promotes; it never rescues. Group tiers stay a function of fit alone, because a "great" tier that really meant "your friend" would be a false statement to the user.
+
 ### Pace, in three depths
 
-**Plain.** Your pace is a range, not a number. If two ranges overlap at all, that is a perfect fit. If they do not, the fit fades smoothly with the gap between them and reaches zero at 90 seconds a mile apart. No cliffs: 8:58 and 9:02 are four seconds apart and score almost perfectly, where the old band system put them in different bands and scored them worse than a 9:02 and a 9:58. Bands survive only as the fallback for data that was captured as bands, like the event form, where the finer signal never existed.
+**Plain.** Your pace is a range, not a number. If two ranges overlap at all, that is a perfect fit. If they do not, compatibility halves for every 60 seconds a mile of gap and never quite reaches zero, so two people far apart can still be ranked against each other instead of tying at the bottom. Whether they are shown to each other at all is a separate question with its own number: a gate at 90 seconds a mile, applied by the surfaces that want one. No cliffs anywhere: 8:58 and 9:02 are four seconds apart and score almost perfectly, where the old band system put them in different bands and scored them worse than a 9:02 and a 9:58. Bands survive only as the fallback for data that was captured as bands, like the event form, where the finer signal never existed.
 
-**Math.** For pace intervals [a_lo, a_hi], [b_lo, b_hi] in sec/mile: gap = max(0, max(a_lo, b_lo) − min(a_hi, b_hi)) s_pace = max(0, 1 − gap / τ), τ = 90 s/mile Overlap is a plateau at 1.0. Linear by choice: τ is arguable in a product review, a decay constant is not (Chen's exponential shape survives as the no-cliff principle; his constants were never fitted to anything). Symmetric, since gap does not depend on argument order. Fallback for bucket-only profiles: same bucket 1.0, adjacent 0.5, else 0.
+**Math.** For pace intervals [a_lo, a_hi], [b_lo, b_hi] in sec/mile: gap = max(0, max(a_lo, b_lo) − min(a_hi, b_hi)) s_pace = 0.5 ^ (gap / h), h = 60 s/mile, the half-life withinGate = gap ≤ g, g = 90 s/mile Overlap is a plateau at 1.0. Asymptotic by choice: the score never reaches 0, so ordering survives at any gap and exclusion is the gate's job rather than a side effect of the curve bottoming out. Chen's exponential shape adopted, his unfitted constants still rejected. A half-life is as arguable in a product review as a tolerance was: "compatibility halves every 60 seconds a mile" and "we stop counting at 90" are the same kind of claim. Symmetric, since gap does not depend on argument order. Fallback for bucket-only profiles: same bucket 1.0, halving per band beyond it, so adjacent stays 0.5 and wider bands stay rankable.
 
 **Code.**
 ```
-// core.js (decision 2026-08-24; tolerance Firestore-tunable)
+// core.js (decision 2026-08-25; half-life and gate both Firestore-tunable)
 const gapSec = Math.max(0, Math.max(aLo, bLo) - Math.min(aHi, bHi))
-const score  = Math.max(0, 1 - gapSec / tol)   // tol = 90 default
-// overlap -> 1.0 plateau; beyond tol -> 0 -> hard-fails in open pool
-// bucket-only profiles fall back to adjacency (1.0 / 0.5 / 0)
-// test: 8:58 vs 9:02 (~0.96) must beat 9:02 vs 9:58 (~0.38)
+const score  = Math.pow(0.5, gapSec / halfLifeSec)  // halfLifeSec = 60 default
+const withinGate = gapSec <= gateSec                // gateSec     = 90 default
+// overlap -> 1.0 plateau; 60s -> 0.50; 90s -> 0.35; 180s -> 0.13; never 0
+// hardDimensions consults withinGate. Nothing consults score == 0 for pace
+// bucket-only profiles halve per band; the band gate stays plus or minus one band
+// test: 8:58 vs 9:02 (0.955) must beat 9:02 vs 9:58 (0.524)
 ```
+
+> **Revised 2026-08-25: the curve and the gate are two numbers**
+>
+> The 90 second tolerance shipped on 2026-08-24 was doing both jobs at once. A hard dimension fails when it has data and scores 0, so the tolerance *was* the gate, and you could not change how pace ranks without changing who gets excluded. It also reinstalled the cliff it was written to remove, at the far end instead of at a band boundary: every pair beyond 90 seconds scored exactly 0, so they all tied and became unrankable. The friends surface found it, being the first mode with no pace gate at all: for a 10:00 runner an 8:00 friend and a 6:30 friend both scored 0 and ordering fell through to availability. Widening the tolerance for that mode only just moved the cliff. Section 02 says a gate belongs in `hardDimensions` and not in the weight vector; a gate expressed as a scoring floor is the same error pointed the other way. Renaming `paceToleranceSec` was safe because the old key had never actually reached the scorer (section 10, trap 14).
 
 ### One pace range today; run types infer from it
 
@@ -196,9 +204,10 @@ Scoring tells you how good a pair is. Selection decides who actually gets matche
 | Mode | Shape | Used by | Status |
 |---|---|---|---|
 | `rank_top_n` | One query, many reusable candidates. Sorting is correct. | App feed, club events | Shipped in the app |
+| `rank_friends` | The same shape with the friend list as its pool. Friendship is the gate, fit is the whole ranking. | Friends surface | Shipped in the app 2026-08-25 |
 | `global_assignment` | One to one, each match consumes both sides. Sorting is **not** correct; needs Hungarian. | Mentor pairing | In v1 spec, not in app |
-| `b_matching` | Mutual edges, degree 3 to 5 per person. | Sparks | Shipped as a script, not in the app |
-| `group_partition` | One set into groups of k. Optimize the **worst** group, not the average. | Pods | Script has two blockers |
+| `b_matching` | Mutual edges, degree 3 to 5 per person. | Sparks | Shipped in the engine repo. Profile-driven since 2026-08-25 |
+| `group_partition` | One set into groups of k. Optimize the **worst** group, not the average. | Pods | Blockers fixed 2026-08-24. Profile-driven with peer mode since 2026-08-25 |
 
 **Plain.** If a match uses someone up, greedy picking strands people. Taking the best pair first, then the best of what remains, feels right and is provably wrong. On a real cohort it formed two pairs where the optimum formed four, leaving four people with nobody.
 
@@ -216,6 +225,12 @@ SELECTION = {
   'circe_pods_v1'   : group_partition,     # local search on worst-pod
 }
 ```
+
+### The friends surface is a mode, not a filter
+
+Filtering the open-pool feed down to friends is the obvious build and it answers the wrong question. The open pool hard-gates pace, availability and proximity, so a friend who runs 11:00 when you run 8:30 never enters the ranked list to be filtered, and the feed caps at 14 proposals, so filtering can return nothing at all. The surface could not tell "not a friend" from "friend the gate dropped", and the friends question is which of my friends should I run with, which omitting a friend answers wrongly. `friendsMode()` loads the pool from `users/{uid}.friendIds` instead, gates on nothing else, and pins the social bonuses to 0, since a constant added to every candidate reorders none of them. The `rankFriends` callable returns friend-of-friend suggestions as a separate list scored under the open-pool mode, because those people are strangers and the discovery gates should apply to them. The scorer was not touched, which is the point.
+
+Event-side, the same claim became true on 2026-08-25. Sparks and Pods held their dimensions, weights and vocabularies in code until `formats/sparks/spec.py` and the pods profile lifted them into data, dispatched through a dimension registry keyed by type. A profile that declares no `direction` dimension now runs **peer mode**: Sparks skips the reservation pass that spreads scarce mentors, Pods skips the anchors and does not print a roaming-mentor section. There is no scarce side at a DJ run, and reserving one would invent a hierarchy the event does not have.
 
 ### Mutual edges, and why Sparks works
 
@@ -259,13 +274,13 @@ return { total, confidence, breakdown, hardPass, trace }
 // and in the profile: minConfidence: 0.60
 ```
 
-> **Settled 2026-08-24: lower-bound ranking, not a hard floor**
+> **Settled 2026-08-24, shipped: lower-bound ranking, not a hard floor**
 >
-> `score()` now returns `confidence` (the share of the mode's weight backed by real data) and the pipeline ranks by `lb = total − λ·(1 − confidence)`, λ = 0.5, batch mode 0, tunable from the Firestore `config/matching` doc without a redeploy. Thin matches still appear, they just cannot outrank fully-known good ones, so the feed never empties during cold start. A hard floor was considered and rejected for exactly that reason. Patched in the `novara` checkout alongside continuous pace, 10 new tests, 62 of 62 passing, awaiting Jacky's commit.
+> `score()` returns `confidence` (the share of the mode's weight backed by real data) and the pipeline ranks by `lb = total − λ·(1 − confidence)`, λ = 0.5, batch mode 0, tunable from the Firestore `config/matching` doc without a redeploy. Thin matches still appear, they just cannot outrank fully-known good ones, so the feed never empties during cold start. A hard floor was considered and rejected for exactly that reason. Committed as `ff180c5` on 2026-08-24 and merged to `main` in PR #199. The Firestore override did not actually reach the scorer until the threading bug was fixed on 2026-08-25, section 10, trap 14.
 
 ### The exploration slot, sequenced
 
-Deliberately reserving a feed slot for a high-uncertainty match is the standard counterweight to lower-bound ranking. It is sequenced **behind the logging contract**, not rejected: exploration is a purchase, a probably-worse match today in exchange for learning whether it was actually good, and until outcomes are recorded the learning is never collected. At launch everyone is new, so the whole feed is already exploration.
+Deliberately reserving a feed slot for a high-uncertainty match is the standard counterweight to lower-bound ranking. It is sequenced **behind the logging contract**, not rejected: exploration is a purchase, a probably-worse match today in exchange for learning whether it was actually good, and until outcomes are recorded the learning is never collected. At launch everyone is new, so the whole feed is already exploration. Three of the four logging legs shipped on 2026-08-25 and post-run feedback started collecting self-reported outcomes the same day, so the purchase is closer to payable than it was. The verified half is still owed.
 
 ---
 
@@ -310,7 +325,7 @@ Soft seekers came out barely ahead of Open, because the June rule filed them as 
 A matching engine with no stated objective is a scoring script. The objective is what makes a weight arguable.
 
 - **North star:** repeat verified attendance within 30 days.
-- **Optimized today:** fit across the available dimensions, as a proxy, because almost no outcome data exists yet.
+- **Optimized today:** fit across the available dimensions, as a proxy, because almost no outcome data exists yet. Post-run feedback began collecting self-reported outcomes on 2026-08-25 and tunes nothing yet.
 - **Explicitly not optimized:** clicks, session time, match volume, feed fill rate.
 
 > **Anti-engagement, on purpose**
@@ -320,7 +335,7 @@ A matching engine with no stated objective is a scoring script. The objective is
 ### Constraints that sit next to the objective
 
 - Output is always a coordination object, a run, intent, event or slot. Never a bare list of people.
-- Every surfaced match should ship a human-readable reason built only from data both sides supplied, and a match the system cannot explain should not be surfaced. **Not enforced in the app.** `synthesizeRun` writes a `whyMatched` object whose fields are all null, and no code path gates surfacing on explainability. The event matchers do enforce it. *Open.*
+- Every surfaced match should ship a human-readable reason built only from data both sides supplied, and a match the system cannot explain should not be surfaced. **Half true in the app since 2026-08-25.** `synthesizeRun` had shipped a `whyMatched` object with every field hardcoded null, `distanceMiles` through a ternary whose branches both returned null; it now carries real distance, pace-overlap seconds, shared-slot count and the social degree. Surfacing is still not gated on explainability, deliberately, because dropping unexplainable matches thins the feed at exactly the cold start section 05 refuses to starve. The event matchers do enforce it. *Open.*
 - Proposals such as "we suggest Saturday 7am" are synthesized **after** scoring, from the matched ranges. They never enter the score.
 
 ---
@@ -335,17 +350,24 @@ What exists, where it lives, and how far along it is. This is the section to upd
 | **App modes** | `matching/modes.js` | **Shipped** | openPool, group, batch, plus per-runType weight profiles |
 | **Weight tuning** | `matching/config.js` | **Shipped** | Firestore `config/matching`, no redeploy. Remote Config path written but inert until firebase-admin v12 |
 | **App pipeline** | `matching/pipeline.js`, `index.js` | **Shipped** | Eligibility, blocks, reports, daily generation, run synthesis |
-| **App tests** | `__tests__/matching.test.js` | **Shipped** | 52 tests, including an exhaustive bidirectional-pace regression |
-| **Lower-bound ranking + continuous pace** | `matching/core.js`, `pipeline.js`, `modes.js`, `config.js` | **Patched, awaiting commit** | confidence returned, lb ranking, continuous interval pace with 90s linear tolerance (bucket fallback), λ and τ Firestore-tunable. 62 of 62 tests pass on-device. Uncommitted in the checkout |
+| **App tests** | `__tests__/matching.test.js`, `feedback.test.js` | **Shipped** | Exhaustive bidirectional-pace regression, the config-doc-to-score threading case, friend-graph and friends-mode cases, and the feedback callables |
+| **Lower-bound ranking + continuous pace** | `matching/core.js`, `pipeline.js`, `modes.js`, `config.js` | **Shipped** | confidence returned, lb ranking, continuous interval pace, λ and the pace knobs Firestore-tunable. Committed as `ff180c5` on 2026-08-24, merged to main in PR #199 |
+| **Pace curve and gate, split** | `matching/core.js`, `modes.js`, `config.js` | **Shipped 2026-08-25** | `paceHalfLifeSec` 60 and `paceGateSec` 90 replace the single `paceToleranceSec`. Asymptotic score, separate gate, bucket fallback halves per band |
+| **Friend graph in ranking** | `matching/core.js`, `modes.js` | **Shipped 2026-08-25** | `socialGraphRelation` and `socialGraphBonus`, additive on the ranking key, zero extra Firestore reads because `friendIds` is already on the user doc. Batch mode zeroes them as it does λ |
+| **Friends surface** | `matching/modes.js`, `matching/index.js` | **Shipped 2026-08-25** | `friendsMode()` plus the `rankFriends` callable; friend-of-friend suggestions returned as a separate list scored under open-pool gates |
+| **Logging contract** | `matching/pipeline.js`, `config.js` | **Three legs of four** | Full ranking key at surface time, complete `configSnapshot`, `statusUpdatedAt` on transitions. The outcome leg cannot be closed from this repo |
+| **Post-run feedback** | `firebase/functions/feedback.js`, `match_feedback` | **Shipped 2026-08-25** | Forced prompt: attended yes/no, then enjoyment, location, people, `paceFit`, `wouldRunAgainWith`. Mirrored onto the match record. `source: self_report`, scores nothing |
+| **Config threading** | `matching/config.js`, `matching/index.js` | **Fixed 2026-08-25** | Firestore-tuned knobs were read and then dropped one call short of the mode builder. Now covered by a test that follows a value from the config doc to a score |
+| **Pace shape in the concierge tools** | `novara-matching/formats/rank.py`, Match Console | **Divergence, logged 2026-08-25** | Both still score pace as `max(0, 1 − gap/90)` with `PACE_TOLERANCE_SEC = 90`, the form the app replaced on 2026-08-25. They agree with each other, so console parity holds; neither agrees with the app engine any more. Section 09, open |
 | **socialIntent capture** | app onboarding | **Not built** | Dimension is weighted 0.08 and always empty |
 | **goal capture** | app onboarding | **Not built** | Dimension is weighted 0.06 and always null |
-| **Event engine** | `novara-matching` repo (github.com/jackyminkler/novara-matching) | **Built 2026-08-24** | One CLI, profile JSON per context, formats sparks / pods / rank, 21 regression tests. Archive copies in the brain are superseded by this repo |
-| **Sparks (b_matching)** | `novara-matching/formats/sparks/` | **Ran live + tested** | Ran Aug 21/22 on 153 people. Golden baseline now enforced by the test suite; columns profile-injected |
-| **Pods (group_partition)** | `novara-matching/formats/pods/` | **Fixed** | Both blockers resolved 2026-08-24; identical 38-pod baseline on the Aug export; runs on Python 3.10 |
+| **Event engine** | `novara-matching` repo (github.com/jackyminkler/novara-matching) | **Profile-driven 2026-08-25** | One CLI, profile JSON per context, formats sparks / pods / rank. Dimensions, weights and vocabularies are data, dispatched by a dimension registry. 37 test cases: 36 in the default suite at about 20 seconds, the pods golden behind `NOVARA_SLOW=1`. `social_sparks_v1` and `social_pods_v1` are the general-event profiles; the social pods fixture places 38 people into 10 pods with no anchors and everyone placed once |
+| **Sparks (b_matching)** | `novara-matching/formats/sparks/` | **Ran live + tested** | Ran Aug 21/22 on 153 people. `spec.py` resolves a profile into dimensions, weights, vocabularies, gates and caps; the Circe run reproduces byte for byte across all 610 directed edges, sha256 prefix `2fb3994249a628c6`, pinned as a test |
+| **Pods (group_partition)** | `novara-matching/formats/pods/` | **Fixed and generalized** | Both blockers resolved 2026-08-24. Peer mode, renormalized active weights and `topic_columns` added 2026-08-25; the 38-pod Circe baseline reproduces at membership sha256 `23fc887cd40e41b0`, seeded at 42, behind `NOVARA_SLOW=1` because it takes about two and a half minutes |
 | **Rank (concierge)** | `novara-matching/formats/rank.py` | **Built** | Any spreadsheet in, top-N per person out. App dimension vocabulary, lower-bound ranking, parse-rate guard |
-| **Match Console (browser)** | published artifact | **Built 2026-08-24** | Rank mode ported line-for-line to JavaScript: drop a CSV, tune weights and λ and τ, top-N per person with reasons, copy-out CSV. Runs entirely in the browser; the roster never leaves the page. Parity-verified against rank.py on 333 surfaced matches. Prototype for the host-app event-template feature |
+| **Match Console (browser)** | published artifact | **Built 2026-08-24** | Rank mode ported line-for-line to JavaScript: drop a CSV, tune weights and λ and the pace tolerance, top-N per person with reasons, copy-out CSV. Runs entirely in the browser; the roster never leaves the page. Parity-verified against rank.py on 333 surfaced matches. Prototype for the host-app event-template feature |
 | **novara_match_v1** | spec only | **Retired 2026-08-24** | Its architecture is implemented by the app engine and this repo; its spec informed both. The lost package is not worth recovering |
-| **Host app integration** | `novara-host` | **Not started** | No matching anywhere in the repo. Pods and Sparks as templates is the target |
+| **Host app integration** | `novara-host` | **Architecture decided 2026-08-24** | Spec at `novara-host/docs/Host_App_Matching_Feature_Spec_v1.md`. A template declares its mode, profile and required registration questions; input is the event's imported `hp_people` guests; results are stored owner-scoped per event. No code yet |
 | **Chen's inherited repo** | `.../implementations/chen-inherited/` | **Superseded** | Neither pipeline runs. ~150 lines of scoring design salvaged |
 
 ### Evidence so far
@@ -360,10 +382,11 @@ What exists, where it lives, and how far along it is. This is the section to upd
 | Conversion once on the list | June alumni 50% vs 31% overall, 1.6x | Roster cross-reference |
 | Returners skew mentor-side | 40% vs 15% of first timers | Roster cross-reference |
 | Verified attendance | **None. Nobody has ever checked in** | checked_in_at empty on all 501 rows |
+| Self-reported outcomes | Collection started 2026-08-25. Nothing analysed yet | `match_feedback`, in-app prompt |
 
 > **The measurement gap**
 >
-> The north star is repeat verified attendance and there is no attendance data at all. Day-of check-in is the single cheapest instrumentation change available, and until it exists every number above is a registration metric wearing a retention costume.
+> The north star is repeat verified attendance and there is no attendance data at all. Day-of check-in is the single cheapest instrumentation change available, and until it exists every number above is a registration metric wearing a retention costume. Post-run feedback, shipped 2026-08-25, buys a self-reported label at a high response rate and a noisier one: people misremember, and a forced prompt between a user and their app creates pressure to tap through. It is recorded as `source: self_report` so a verified source can sit beside it rather than overwrite it. When the two disagree, the roster wins.
 
 ---
 
@@ -373,10 +396,20 @@ What exists, where it lives, and how far along it is. This is the section to upd
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-08-25 | Pace is two numbers: an asymptotic curve with a 60 s/mile half-life, and a separate `paceGateSec` of 90 s/mile. Revises the 2026-08-24 tolerance | One number was doing two jobs, so ranking could not be changed without changing who is excluded, and every pair beyond the tolerance tied at 0 and became unrankable. Chen's shape is now implemented and not merely cited. Section 03 |
+| 2026-08-25 | The friend graph is an additive bonus on the ranking key, never an eighth dimension | A social dimension always has data, so a stranger's 0 would be dragged through the renormalized denominator: a penalty on strangers, not a bonus for friends. Applied after `hardPass`, so it cannot rescue a gate. Section 03 |
+| 2026-08-25 | Friends are a mode with the friend list as its pool, not a filter over the open-pool feed | The open pool gates pace, availability and proximity, so filtering silently omits exactly the friends the gates dropped, and the surface cannot tell that from having no friends. Section 04 |
+| 2026-08-25 | Logging contract: ranking key, full config snapshot and action timestamps written at surface time. The outcome leg stays open | `total` alone loses why one pair outranked another, the social bonus is unrecomputable later because `friendIds` moves, and two runs at different λ used to write byte-identical records. Section 08 |
+| 2026-08-25 | Post-run feedback is collected as `self_report` and used for nothing yet | Collecting outcomes and tuning on them are separate decisions; shipping unfitted constants is the mistake this log already records once. `paceFit` is the first signal that can settle the pace numbers with evidence. When self-report and a verified roster disagree, the roster wins |
+| 2026-08-25 | Sparks and Pods are profile-driven; a profile with no `direction` dimension runs peer mode | "A mode is data" was true of rank and false of the event formats. Peer mode skips the mentor reservation pass and the anchors, because a social run has no scarce side to reserve. Section 04 |
+| 2026-08-25 | A blank pace in the event matchers is unknown, not a zero gap | `pace_gap` returns None instead of raising or reading as a perfect match, so the gate cannot apply and the dimension drops out. Scoring a blank as gap 0 could have put someone in the fastest wave by accident. Zero rows in the Circe export were affected, so nothing moved. Same family as trap 13 |
+| 2026-08-25 | Golden-run reproduction is a test, by hash | Aggregate counts pass while individual pairings shuffle. Sparks pins sha256 `2fb3994249a628c6` over all 610 directed edges; pods pins membership `23fc887cd40e41b0` at seed 42 |
+| 2026-08-24 | Host-app matching is an event-template capability: rank runs in-app on the ported `matchcore.js`, sparks and pods stay Python-canonical behind a Cloud Run service the app calls | Forking ~500 lines of sparks and ~900 lines of pods, both pandas-based and the most correctness-critical code there is, into TypeScript would create a permanent two-language drift burden, so the section 12 drift rule is not widened. Sparks and pods require the Circe mentor columns and error on app-user exports while rank runs on them, 109 of 148 app users matched, so the template has to surface the registration questions a mode needs before the event |
+| 2026-08-24 | `confidenceLambda` and the pace constants are named constants threaded through every mode builder and overridable from `config/matching`; batch mode pins λ and the social bonuses to 0 | The knobs most likely to need tuning against live match quality should not require a functions deploy. Admin tooling needs the raw score ordering, not the confidence-penalized one. Half-wired until the threading fix of 2026-08-25 |
 | 2026-08-24 | Decisions made in code sessions land in `MATCHING_INBOX.md`, swept into this doc from Cowork | MATCHING.md is generated and must never be hand-edited; the inbox next to each mirror gives Claude Code a place to log decisions that provably flows back. Section 12, the update loop |
 | 2026-08-24 | The Match Console mirrors `rank.py`; a change must land in both or be logged as a divergence | Two implementations of one rule set is the drift that section 10 exists to prevent. The console header pins the engine version it mirrors |
 | 2026-08-24 | One stored pace range per person; run types infer from it. Long runs use the slower end, social runs barely weight pace, easy runs sit middle-to-slow at shorter distances, track prefers close as an endurance proxy | Per-runType inference is config on one honest number, not four more onboarding questions. Overlap-width and distance-conditional pace deferred to the roadmap with the architecture already shaped to take them. Section 03 |
-| 2026-08-24 | Continuous interval pace with a 90 s/mile linear tolerance; bucket adjacency only as the fallback for band-only data | Bands put 8:58 and 9:02 in different bands (0.5) while scoring 9:02 vs 9:58 perfect (1.0). Chen's no-cliff shape adopted; his unfitted constants rejected; linear because a tolerance is arguable and a decay constant is opaque |
+| 2026-08-24 | Continuous interval pace with a 90 s/mile linear tolerance; bucket adjacency only as the fallback for band-only data | Bands put 8:58 and 9:02 in different bands (0.5) while scoring 9:02 vs 9:58 perfect (1.0). Chen's no-cliff shape adopted; his unfitted constants rejected; linear because a tolerance is arguable and a decay constant is opaque. **Revised 2026-08-25:** the linear form removed the cliff at band boundaries and installed a new one at 90 seconds, and the tolerance was silently also the gate |
 | 2026-08-24 | Lower-bound ranking, λ = 0.5, batch 0, Firestore-tunable. No hard floor | A floor empties the feed exactly at cold start; the lower bound fixes the thin-profile bug without excluding anyone. Section 05 |
 | 2026-08-24 | Exploration slot sequenced behind the logging contract | Exploration buys data; without logging the data is never collected. Not rejected, sequenced |
 | 2026-08-24 | Event engine lives in its own repo, `novara-matching` | Production-bound code gets its own history and tests; the brain keeps business memory. Succeeds Chen's repo of the same name |
@@ -398,7 +431,11 @@ What exists, where it lives, and how far along it is. This is the section to upd
 | **Dedupe policy** | Union the answers, or keep most recent and flag | Sparks unions, v3 keeps most recent. Hybrid: union multi-selects, flag conflicting pace for a human |
 | **Direction matrices per profile** | Keep the divergent values, or unify | Mentor+Both is 0.90 in Sparks and 0.40 in Pods. Both defensible; clustering mentors wastes anchors in a pod but is fine over brunch. Keep divergent, but as declared config |
 | **Weight ordering for peer matching** | Backlog says place = runType > pace = distance = time; inherited model says pace = distance dominate | Both live under different profiles. Outcome data decides |
-| **App tolerances** | pace ~90 s/mi, distance 5 km, time 90 min, near-miss ceiling 0.25 | All starting values, explicitly labelled as guesses |
+| **App tolerances** | pace half-life 60 s/mi and gate 90 s/mi, distance 5 km, time 90 min, near-miss ceiling 0.25, `friendBonus` 0.15, `friendOfFriendBonus` 0.05 saturating at 3 | All starting values, explicitly labelled as guesses. `paceFit` from post-run feedback is the first evidence that can settle the pace pair, because it grades the range we matched on in the user's own words |
+| **Pace shape in the concierge tools** | Port the half-life and the gate split into `rank.py` and the Match Console, or declare the concierge path a deliberately different profile | `rank.py` speaks the app's dimension vocabulary on purpose, so drifting on the pace curve means a concierge ranking and an app ranking answer differently about the same two people. The linear form also ties everything beyond 90 seconds, which is the defect the app change existed to remove |
+| **Friend bonus in the open pool** | Keep 0.15, or drop it to 0 and let the friends surface own the relationship, possibly raising the friend-of-friend bonus | The open pool exists to find people more like you, not people you already know, so a first-degree bonus there arguably spends a discovery slot twice. A friend-of-friend genuinely is discovery. Needs outcome data; not settled |
+| **Blank answers in the Circe dimensions** | Leave them scoring 0 at full weight, or make them drop out the way section 05 says | `topic`, `industry` and `goal` return 0.0 for nothing to work with while reporting `has_data = True`, so a registrant who skipped an optional question ranks as a bad match rather than an unknown one. Fixing it moves the golden numbers, so it has to be decided on purpose. The newer `tag_overlap` and `symmetric_dir` types already do it the section 05 way |
+| **Pod seeding in peer mode** | Keep `mentor_strength`, or seed on spread across the interest vocabulary | On a social form nobody has stated topics, seniority words or investor status, so strength is near zero for everyone and seeding is close to arbitrary. The local search converges anyway, but "soft anchor" is the wrong name for what it selects on a peer run |
 | **Saturation** | Soft, always drop AI and IDF-weight the rest, or strict hard-drop above 40% | Strict zeroed three of six topics on a 153-person room. Soft above ~100 people |
 | **Form redesign** | Split intent into two questions, or keep and parse | Splitting removes the ambiguity at source but breaks comparability with June and August |
 
@@ -422,6 +459,9 @@ Each of these produced confidently wrong output in a real run. They are written 
 | 10 | **Parse-rate guard.** Refuse to score when under 70 to 80 percent of a field parses. | A pipeline of identical 0.51 fallback scores looked like a working result |
 | 11 | **Units detected, never assumed. Timezone signs checked.** | Silent mi to km inflated distances 61%; pandas read UTC-7 as +07:00, a 14 hour error |
 | 12 | **NaN is truthy in Python.** `x or fallback` does not do what you think. | Every row without a LinkedIn collapsed into one dedup key, an hour after trap 9 was filed |
+| 13 | **A schema layer that coerces null to a zero makes absent indistinguishable from a measurement.** Guard at the boundary, and check what your out-of-range clamp does with it. | A profile that never had a pace written reached the engine as 0/0. The bucket path found no containing bucket, hit the clamp and returned band 0, filing the user as a 6:00 to 7:00 runner and matching them at a perfect 1.0 against the fastest people in the pool. The continuous path read the same 0/0 as a nine minute gap and hard-failed them out of the pool entirely. Same root cause, opposite symptoms, neither one errors |
+| 14 | **A config value that is read but never passed on is silently the default.** Test the journey from the config doc to a score, not each half separately. | `confidenceLambda` and the pace tolerance were loaded from Firestore and dropped one call short of the mode builder, so editing the config doc changed nothing. The social knobs inherited the same gap. Both halves passed their unit tests |
+| 15 | **A dimension that returns 0 for "nothing to work with" while reporting that it has data is a penalty for not answering.** | Circe registrants who skipped an optional question rank as bad matches rather than unknown ones. Still live, deliberately: fixing it moves a golden baseline (section 09, open) |
 
 > **The meta-lesson, proven three times**
 >
@@ -433,20 +473,19 @@ Each of these produced confidently wrong output in a real run. They are written 
 
 ### Next, in order
 
-Reordered 2026-08-24 after the Aug 22 event: guests admitted they never meet their Sparks. A recommendation puts the work on the person; a coordination point puts it on the structure. The roadmap now favours things that make connections happen or record whether they did.
+Swept 2026-08-25: the lower-bound patch merged and the logging contract lost three of its four legs, so what remains of it is the outcome leg, which cannot be closed from the app repo. Reordered 2026-08-24 after the Aug 22 event: guests admitted they never meet their Sparks. A recommendation puts the work on the person; a coordination point puts it on the structure. The roadmap now favours things that make connections happen or record whether they did.
 
 | # | Work | Why now | Blocked on |
 |---|---|---|---|
-| 1 | Verify and commit the lower-bound patch | Written, 62 of 62 tests green on-device, sitting uncommitted | Jacky reviewing the diff |
-| 2 | Logging contract | Every surfaced match records score, config version, action, outcome. Nothing can improve until this exists, and it is cheap now and expensive to retrofit | Nothing |
-| 3 | Sparks follow-up message | Two questions: did you find them, want an intro. The only measurement item that is also a connection step, and the cheapest labeled data available | Next event |
-| 4 | Structured Sparks moment or pods for the run phase | Sparks produced lists, not meetings. A designated moment or an assigned group converts the recommendation into a coordination point | Next event format decision |
-| 5 | Host-app attendance tap | Hosts confirm who showed from the roster; guests do nothing. Free run events never check in | Host app M1 |
-| 6 | socialIntent and goal capture in the app | 0.14 of declared weight is empty; the event form already proves people will answer these | Onboarding design |
-| 7 | Exploration slot | The counterweight to lower-bound ranking, sequenced here so its data lands somewhere | 2 |
-| 8 | Pods and Sparks as host-app templates | Pick a format per event in the app; the engine repo already takes a profile per event | 5 |
-| 9 | Overlap-width refinement to pace | The plateau scores a 2-second sliver of overlap like a fully nested range. Blend the gap score with the overlap fraction; the change stays inside `scorePace` / `d_pace`, scorer API untouched. Needs outcome data to tune the blend | 2, and real ranges in the wild |
-| 10 | Conditional pace, three stages | Stage 1: capture pace as facts per run context on the weekly template (settings philosophy below). Stage 2: seed a personal pace-distance curve from the one stored range with a Riegel fatigue model, so one number becomes a defensible curve. Stage 3: learn the curve from verified runs once the Activity Graph exists. Scorer unchanged throughout; feature extraction becomes `paceIntervalFor(profile, distance)` | Stage 1 on onboarding redesign; stage 3 on Activity Graph |
+| 1 | Outcome leg of the logging contract | Three legs shipped 2026-08-25: ranking key, config snapshot, action timestamps. Self-reported feedback is collecting, but the north star is *verified* attendance and no verified source exists anywhere | 4, the host-app attendance tap |
+| 2 | Sparks follow-up message | Two questions: did you find them, want an intro. The only measurement item that is also a connection step, and the cheapest labeled data available | Next event |
+| 3 | Structured Sparks moment or pods for the run phase | Sparks produced lists, not meetings. A designated moment or an assigned group converts the recommendation into a coordination point | Next event format decision |
+| 4 | Host-app attendance tap | Hosts confirm who showed from the roster; guests do nothing. Free run events never check in | Host app M1 |
+| 5 | socialIntent and goal capture in the app | 0.14 of declared weight is empty; the event form already proves people will answer these | Onboarding design |
+| 6 | Exploration slot | The counterweight to lower-bound ranking. Its data now has somewhere to land, so what is missing is the outcome that says whether the gamble paid | 1 |
+| 7 | Pods and Sparks as host-app templates | Pick a format per event in the app; the engine repo takes a profile per event and, since 2026-08-25, drives its scoring semantics from it too. Architecture decided 2026-08-24: rank in-app on `matchcore.js`, sparks and pods behind a Cloud Run service, no TypeScript fork | 4 |
+| 8 | Overlap-width refinement to pace | The plateau scores a 2-second sliver of overlap like a fully nested range. Blend the gap score with the overlap fraction; the change stays inside `scorePace` / `d_pace`, scorer API untouched. Needs outcome data to tune the blend | 1, and real ranges in the wild |
+| 9 | Conditional pace, three stages | Stage 1: capture pace as facts per run context on the weekly template (settings philosophy below). Stage 2: seed a personal pace-distance curve from the one stored range with a Riegel fatigue model, so one number becomes a defensible curve. Stage 3: learn the curve from verified runs once the Activity Graph exists. Scorer unchanged throughout; feature extraction becomes `paceIntervalFor(profile, distance)` | Stage 1 on onboarding redesign; stage 3 on Activity Graph |
 
 ### From the patent
 
@@ -472,6 +511,8 @@ Ship personalization as facts about someone's life, never as arithmetic. "Saturd
 | Specs and handoffs | `Novara-Brain/03-product/matching/specs/` |
 | Implementations | `Novara-Brain/03-product/matching/implementations/` |
 | Event data | `Novara-Brain/03-product/matching/event-data/` |
+| Host app matching spec | `novara-host/docs/Host_App_Matching_Feature_Spec_v1.md` |
+| General social profile design | `novara-matching/docs/general-social-matching-design-v1.md` |
 | Circe event ops | `Novara-Brain/05-launch/events/matching/` |
 | In-app product spec | `Novara-Brain/03-product/prds/shipping/pace-matching-v1-spec.md` |
 | Patent sections | `Novara-Brain/07-patent/` |
@@ -487,6 +528,10 @@ This document is generated: `content.py` renders to both MATCHING.md and the fie
 - **Back in Cowork.** Say *sweep the matching inbox*. Cowork reads every checkout's inbox, writes the decisions into the decision log here, re-renders both outputs, republishes the artifact at the same URL, syncs all mirrors, and clears the swept blocks.
 - **Event runs.** The engine repo and the Match Console need no loop of their own for use; only behaviour changes do. A rank-rule change must land in `rank.py` and the console together, or be logged as a divergence.
 - **The safety net (added 2026-08-24).** A long session can be compacted and lose mid-session instructions, so the loop does not rely on any session remembering it. The filing rule is also written into each checkout's `CLAUDE.md`, which Claude Code re-reads at every session start, with the instruction to commit the inbox block *in the same commit* as the change, never at session end. `tools/drift_check.py` in the engine repo mechanically verifies rank.py/console parity on fixture rosters (run it before committing either file). And a weekly scheduled task, Mondays 9am PT, runs the drift check on Jacky's machine and flags unswept inbox blocks.
+
+> **What filing does not cover: a branch that never lands**
+>
+> `ff180c5` was correct, committed and pushed, and stacked linearly on a branch carrying two unrelated concerns, the live `hp_` rules batches and the users-PII remediation. None of the three could ship without the others, so all three stayed invisible for weeks, and a later session read the clean `main` checkout as evidence the work had been lost and nearly rebuilt it from scratch. It landed in PR #199. The filing discipline covers decisions; nothing yet notices work that is filed, committed and still unmerged. Until something does, read a **Shipped** row in section 08 as shipped somewhere, and check what it is stacked on.
 
 > **Why an inbox file and not memory**
 >

@@ -209,3 +209,26 @@ from the shared input base and each claimed a full row until boxed, and the deta
 "Events 2" directly above a "3 events" heading, because `eventCount` counts only what someone
 signed up for while the history lists invitations and declines too. Both numbers were right and
 the pair read as a contradiction, so each is now named for what it is.
+
+## Production status, 2026-08-25
+
+**Owner scoping is live.** Applied through the consumer repo as PR #201 (`dbf5b57`) and deployed.
+The backfill ran first, as the ordering required, and stamped three production documents. The host
+platform is multi-tenant in production from this point.
+
+Three documents is the whole of what had ever been written to production, which is worth knowing:
+almost everything real still lives in the emulator, and the production import has not run yet.
+
+One of those three was the Circe org carrying `"via": "Anna"`, a private relationship note that the
+second allowlisted account could read for as long as both UIDs sat on the list. The exposure this
+sprint was written about was real, and small only because production was nearly empty.
+
+Remaining before the sprint closes:
+
+1. Confirm `ownerUid` on the live documents deliberately rather than by inference. Nobody has read
+   a production document with `ownerUid` on it directly; the evidence is a backfill read-back
+   reported by another session, plus the fact that a workspace which still loads under these rules
+   is itself a passing test.
+2. Run the seeders and the 1,233-person import against production. All four are reruns of
+   something already proven against the emulator.
+3. Step 4 of the work order: Vicki on the allowlist, and `hp_feedback`.
