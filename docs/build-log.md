@@ -2,6 +2,32 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-25, the four guest exports imported and verified against the emulator
+
+CRM sprint 1, step 2. `seed/import-luma-guests.ts` ran against the emulator on all four brain
+repo exports. 1,233 people, 837 signed up, 352 invited only, 44 declined only, 134 with two or
+more events: every figure matches the independently built master list exactly. Re-running all
+four against the populated store reports zero new people and the same distribution, so the
+importer is idempotent against Firestore and not only in memory.
+
+**`seed/link-app-users.ts`** sets `appUserUid` from the confirmed email join in
+`master-contacts.csv`. This is the record-to-identity pointer from the partner identity model,
+so it links and never copies: nothing about the person's own profile is written into the host's
+record. Only the 21 rows whose match type is exactly `email` are linked. The seven
+`name-possible` rows stay null, because a wrong guess there silently attributes one person's app
+activity to another, which is the "suggested, never automatic" rule applied to a bulk backfill.
+
+With that link in place, all five saved segments from the brain repo reproduce exactly against
+`hp_people`: 134 repeat attendees, 817 signed up but not in the app, 352 invited who never came,
+290 Lume waitlist yes, 59 superconnectors (Vicki Powell at 16, Julia Barfield at 12). The
+superconnector count is a graph query over `referredBy`, which is cheap only because the People
+page loads the owner's people once and filters in memory. That was already the recorded decision
+for avoiding a composite index; it turns out to be what makes this segment possible at all.
+
+Also verified: importing again **after** linking does not clear `appUserUid`. The importer reads
+the stored people before merging, and only host-written fields on a genuinely new person start
+blank, so the full-document replace preserves the link rather than undoing it.
+
 ## 2026-08-25, multi-tenant foundation verified against the emulator
 
 CRM sprint 1, step 1. The ownership work that was written last session is now proven rather
