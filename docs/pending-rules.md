@@ -33,12 +33,30 @@ runs its 72 cases against. What was tested is what shipped.
 by another session via the Firebase MCP and matches. This repo has no Firebase MCP and no
 production credentials, so that is relayed, not first-hand.
 
-**Not verified by anyone directly:** that `ownerUid` is present on the live documents. The backfill
-dry run planned 3 documents (`hp_orgs` 1, `hp_events` 1, `hp_guestTokens` 1), Jacky ran `--write`,
-and two were read back with `ownerUid` copied from the legacy `hostUid` / `createdBy` rather than
-defaulted to the `--owner` fallback. There is strong indirect evidence too: with these rules live a
-document missing `ownerUid` is denied to everyone, so a workspace that still loads is a passing
-test. Worth confirming deliberately rather than leaving as an inference.
+**`ownerUid` on the live documents: confirmed.** Read out of production by the consumer-repo
+session, which has the credentials for it, using a query **filtered on `ownerUid` equal to the host
+uid**. That design is the good part and worth copying: a returned row is itself the evidence that
+the field holds that value, rather than a row plus a claim about what was seen in it. All three
+documents that existed in production came back:
+
+```
+hp_events/uL6u63TveLpkKy8axRs2            ownerUid present, equals the legacy hostUid
+hp_orgs/Toa6em6WSYl9DGALhSSg              ownerUid present, equals the legacy createdBy
+hp_guestTokens/apkBTBLpZPawNAhtsDKmAHlI   ownerUid present
+```
+
+**One claim about that third document does not hold, and the correction matters.** It was reported
+as demonstrating that the backfill's token rule, take the owner of the event the token opens rather
+than whoever ran the script, executed rather than falling through to the `--owner` fallback. It
+cannot demonstrate that. `ownerOfEvent()` returns `ownerUid ?? hostUid ?? owner`, and in this
+dataset Jacky owns the event, so all three paths produce the same string. The observation is
+consistent with every branch and discriminates between none of them.
+
+So the branch was exercised properly instead, on the emulator, where the answers can differ: plant
+an event owned by another uid plus a pre-`ownerUid` token pointing at it, run the backfill with
+`--owner` set to Jacky. The token came back owned by the *event's* owner, not by the flag. That is
+the branch which breaks first once a second host has events, so it is worth having observed rather
+than assumed. Probe documents were removed afterwards.
 
 **The exposure this closed was real, not theoretical.** One of the three backfilled documents was
 the Circe org, carrying `"via": "Anna"`. That is a private relationship note, and it was readable

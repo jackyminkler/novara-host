@@ -90,3 +90,29 @@ Three things generalise:
   `git log -S` over `grep`, that was itself false: both returned the same answer at both commits.
   A wrong diagnosis dressed as a process improvement is worse than no lesson, because it gets
   reused.
+
+## Addendum, 2026-08-25: a grep answers a different question than the one you asked
+
+`grep` answers "does this string appear". It never answers "does this thing exist". Three
+instances in one day, across three sessions:
+
+- A `grep` of `main` in another repo, run either side of a merge, read as one check being wrong
+  when the file had genuinely changed.
+- A branch-state check that missed a commit stranded off `main`'s history.
+- `grep -c "function hpOwnsEvent()"` returning zero against a function declared as
+  `hpOwnsEvent(eventId)`. The function was there; the parentheses were not.
+
+Two techniques that do answer the question, both used to good effect the same day:
+
+- **Diff against a known-good file rather than counting matches.** Normalising the applied
+  ruleset and `emulator/firestore.rules` for whitespace and comments, then diffing, proved the
+  deployed rules are exactly the ones the 72-case suite runs against. No pattern to get wrong.
+- **Construct the check so the hypotheses give different answers.** A production document whose
+  `ownerUid`, whose event's owner, and whose `--owner` fallback are all the same string cannot
+  tell you which branch produced it. Planting an event owned by a *different* uid makes the two
+  outcomes distinguishable, and turns an assumption into an observation.
+
+The general form: before running a check, ask what result the wrong hypothesis would produce. If
+it is the same result, the check is decoration. This is the same failure as the retracted
+`git log -S` lesson above, which is now three times in one day that confirming evidence was
+mistaken for discriminating evidence.
