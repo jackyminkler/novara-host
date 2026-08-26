@@ -13,8 +13,14 @@ five minutes.
 > would leave every other repo unable to actually follow it.
 > **To change it:** edit the canonical copy, run the mirror script, commit all repos.
 > Never edit a mirror.
-> **Readable version:** https://claude.ai/code/artifact/880d897e-8d30-4b32-9dce-53385e1f0b71
-> — same content, for readers without a checkout. If it 404s, this file is authoritative.
+> **Readable versions**, for readers without a checkout — Claude chat, Cowork, humans.
+> If any 404s, the files in the repos are authoritative.
+> - This standard: https://claude.ai/code/artifact/880d897e-8d30-4b32-9dce-53385e1f0b71
+> - System map: https://claude.ai/code/artifact/257c3cb8-2fc0-4365-bab7-6069459a5e8b
+> - Product handbook: https://claude.ai/code/artifact/0a947e3c-86f7-4f23-b7b6-2ba8df857f8b
+>
+> All three are republished to those same URLs by `weekly-repo-sweep`. Publishing without
+> passing the URL creates a competing copy, which is the drift this whole document is about.
 
 ---
 
