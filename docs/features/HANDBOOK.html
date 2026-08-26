@@ -1,0 +1,62 @@
+<title>Novara Feature Handbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#EFEEF3; --surface:#FFF; --sunk:#E4E3EC;
+  --ink:#1A1826; --ink-2:#4A4760; --ink-3:#767391;
+  --rule:#D6D4E2; --hair:#E7E5EF; --violet:#4F3BC9; --violet-soft:#EDEAFB;
+  --f-display:"Zilla Slab",Georgia,serif;
+  --f-body:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#131220; --surface:#1C1A2B; --sunk:#232135;
+  --ink:#E9E7F2; --ink-2:#B4B0C9; --ink-3:#847FA0;
+  --rule:#332F49; --hair:#2A2740; --violet:#A695FF; --violet-soft:#282243;
+}}
+:root[data-theme="dark"]{
+  --ground:#131220; --surface:#1C1A2B; --sunk:#232135;
+  --ink:#E9E7F2; --ink-2:#B4B0C9; --ink-3:#847FA0;
+  --rule:#332F49; --hair:#2A2740; --violet:#A695FF; --violet-soft:#282243;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--f-body);
+  font-size:16.5px;line-height:1.65;-webkit-font-smoothing:antialiased;
+  padding:0 24px 96px;}
+.wrap{max-width:70ch;margin:0 auto;}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(32px,6vw,52px);
+  line-height:1.04;letter-spacing:-.018em;margin:64px 0 0;text-wrap:balance;
+  border-bottom:2px solid var(--ink);padding-bottom:24px;}
+h2{font-family:var(--f-display);font-weight:600;font-size:clamp(22px,3.4vw,30px);
+  line-height:1.16;margin:0 0 4px;letter-spacing:-.012em;text-wrap:balance;scroll-margin-top:20px;}
+h3{font-family:var(--f-body);font-weight:600;font-size:16.5px;margin:30px 0 6px;
+  color:var(--ink);letter-spacing:-.004em;}
+p{margin:13px 0;text-wrap:pretty;}
+hr{border:0;border-top:1px solid var(--rule);margin:56px 0 30px;}
+a{color:var(--violet);text-underline-offset:2px;}
+a:focus-visible{outline:2px solid var(--violet);outline-offset:3px;border-radius:2px;}
+code{font-family:var(--f-mono);font-size:.85em;background:var(--sunk);
+  padding:.1em .34em;border-radius:3px;}
+ul{margin:13px 0;padding-left:1.15em;} li{margin:6px 0;} li::marker{color:var(--ink-3);}
+blockquote{margin:22px 0;padding:16px 20px;background:var(--violet-soft);
+  border-left:3px solid var(--violet);border-radius:0 4px 4px 0;color:var(--ink-2);}
+blockquote p{margin:0;} blockquote p+p{margin-top:9px;}
+blockquote strong{color:var(--ink);}
+/* the status line that follows each feature h2 */
+h2 + p > strong:first-child{font-family:var(--f-mono);font-size:11px;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--violet);
+  background:var(--violet-soft);padding:3px 8px;border-radius:3px;
+  display:inline-block;}
+h2 + p{margin-top:10px;color:var(--ink-2);font-size:14px;}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+html{scroll-behavior:smooth}
+</style>
+<div class="wrap">
+<h1>Novara feature handbook</h1>
+<p>What every shipped feature does, in the user's language. Written for an end user, a new hire, or a support answer. No file paths, no collection names.</p>
+<blockquote><p><strong>Generated — do not edit.</strong> Built from the "What it does" section of each doc in <code>docs/features/</code> by <code>scripts/eng/build_feature_handbook.py</code>. An edit here is destroyed the next time it runs. Change the feature doc instead.</p></blockquote>
+<p>&gt;</p>
+<blockquote><p>The engineering half of each feature (the surface map, the change protocol, the cross-product stakes) stays in <code>docs/features/</code> next to the code. Only the user-facing half is extracted here, so the two cannot drift: there is one author and one source.</p></blockquote>
+</div>

@@ -8,6 +8,9 @@ five minutes.
 > **Mirrors:** `novara-matching/`, `novara-host/`, `novara-pulse/`, and
 > `Novara-Brain/03-product/engineering/` — byte-identical, synced by
 > `scripts/eng/mirror_engineering.sh`, drift-checked by `/cross-repo-check`.
+> The mirror carries the whole **kit**, not just this file: the ADR template, the feature
+> template, and the handbook generator each repo's CI runs. Mirroring only the standard
+> would leave every other repo unable to actually follow it.
 > **To change it:** edit the canonical copy, run the mirror script, commit all repos.
 > Never edit a mirror.
 > **Readable version:** https://claude.ai/code/artifact/880d897e-8d30-4b32-9dce-53385e1f0b71
@@ -44,6 +47,18 @@ it *in that session*, before it ends. Not later, not from the diff. See §3.
 | `novara-matching` | `~/novara-matching` | The event matching engine — sparks / pods / rank — and the Match Console | Python, JS |
 | `novara-pulse` | `~/novara-pulse` | Pulse iOS app | Swift, SwiftUI |
 | `novara-brain` | `~/novara-brain` | Business and product knowledge, skills, canonical strategy. **Not a code repo** — it takes no part in the CI, changelog, or ADR conventions below | Markdown |
+
+**`SYSTEM_MAP.md`** at this repo root is the generated index of where every document and
+significant source location lives, across all five repos, Brain included. It also carries
+the four cross-repo couplings and the boundaries between them. Regenerate with
+`scripts/eng/build_system_map.py`; it is rebuilt by `weekly-repo-sweep`, not by CI, because
+a CI runner sees one repo and would rebuild it with four missing.
+
+Per-repo architecture stays in each repo's own `docs/ARCHITECTURE.md`. The map says *where*
+a thing is; architecture says *how* it works.
+
+> `novara-host` and `novara-matching` have no `ARCHITECTURE.md` yet. Their structure is
+> currently described only in `CLAUDE.md` and their PRDs. Filed in `DEFERRED.md`.
 
 ### Ownership boundaries that are load-bearing
 
@@ -465,18 +480,40 @@ guarantees the field enters the conversation at all.
 
 ### Where the user-facing half is published
 
-Authored in the repo that owns the feature, next to the code. `HANDBOOK.md` is generated
-from those files by `scripts/eng/build_feature_handbook.py`, and is the readable,
-shareable, cross-product copy.
+**Source of truth: `docs/features/` in the repo that owns the feature.** That is the only
+thing anyone edits. Everything below is an output, and outputs are never hand-edited.
 
-**It is never authored separately, and never copied into Novara-Brain.** Brain holds
-business truth: positioning, strategy, people. A feature description is product truth, and
-duplicating it there creates exactly the drift Brain's own filing rules exist to prevent —
-*one canonical home per concept, not two competing ones*. Brain, host and Pulse read the
-handbook; they do not keep a copy.
+| Surface | Reaches | Built by |
+| --- | --- | --- |
+| `docs/features/*.md` | Claude Code, and anyone with the checkout | Written by hand. **The source.** |
+| `docs/features/HANDBOOK.md` and `.html` | That repo's features, as one document | `build_feature_handbook.py`, checked by that repo's CI |
+| The published product handbook | **Claude chat, Cowork, humans with no checkout** | `build_feature_handbook.py --all`, rebuilt by `weekly-repo-sweep` |
 
-CI runs `build_feature_handbook.py --check`, so an edited feature doc with a stale handbook
-fails the PR rather than being discovered months later.
+**Every product repo owns its own features.** `novara` documents the consumer app,
+`novara-host` documents host coordination, `novara-pulse` documents Pulse. Each runs the
+generator in its own CI, so each enforces its own handbook.
+
+`novara-matching` is deliberately excluded. It is an engine, not a product with users, and
+its behavior is specified by `MATCHING.md`. A "feature" section describing a scoring mode
+would be written for an audience that has no way to reach it.
+
+### The cross-product handbook
+
+`--all` concatenates every product repo's feature docs into one page, grouped by product.
+That page is **not committed to any repo**: it is an aggregate none of them owns, and
+committing it into `novara` would make `novara` look like the owner of the host platform's
+documentation. Only a machine holding every checkout can build it, so `weekly-repo-sweep`
+rebuilds and republishes it rather than CI.
+
+It reports a repo it cannot find as **not found**, never as a product with no features.
+Those are different facts and must not look alike.
+
+### Not in Novara-Brain
+
+Brain holds business truth: positioning, strategy, people. A feature description is
+product truth, and duplicating it there creates exactly the drift Brain's own filing rules
+exist to prevent — *one canonical home per concept, not two competing ones*. Brain reads
+the published handbook; it does not keep a copy.
 
 ### When a feature needs a doc
 

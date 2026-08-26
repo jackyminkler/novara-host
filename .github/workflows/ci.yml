@@ -23,6 +23,17 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build
 
+  docs:
+    name: Docs consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Feature handbook is up to date
+        # The handbook is generated from docs/features/*.md. Editing a feature doc
+        # without regenerating leaves a published copy that quietly disagrees with
+        # the source, which is the drift the whole system exists to prevent.
+        run: python3 scripts/eng/build_feature_handbook.py --check
+
   rules-boundary:
     name: Rules-ownership boundary
     runs-on: ubuntu-latest
