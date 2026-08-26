@@ -1,0 +1,54 @@
+name: CI
+
+# The gate documented in CONTRIBUTING.md and ENGINEERING.md §8. Until this existed,
+# nothing enforced it outside Jacky's machine.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  typecheck-build:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  rules-boundary:
+    name: Rules-ownership boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: firebase.json must have no firestore section
+        # Reads the parsed structure, not a grep. A grep answers "does this string
+        # appear" — including inside a comment — never "does this key exist".
+        run: |
+          node -e '
+            const c = require("./firebase.json");
+            if ("firestore" in c) {
+              console.error("::error::firebase.json has a firestore section. This repo must" +
+                            " never be able to deploy the shared ruleset. See ADR-0001 in" +
+                            " the consumer repo.");
+              process.exit(1);
+            }
+            console.log("No firestore section. Boundary intact.");
+          '
+
+      - name: No collection-group rules proposed in pending-rules.md
+        # Collection-group rules span both products in the shared ruleset.
+        run: |
+          if [ -f docs/pending-rules.md ] && grep -nE 'match /\{path=\*\*\}/' docs/pending-rules.md; then
+            echo "::error::pending-rules.md proposes a collection-group rule. Those match" \
+                 "subcollections in the consumer app too. See CLAUDE.md."
+            exit 1
+          fi
+          echo "No collection-group rules proposed."
