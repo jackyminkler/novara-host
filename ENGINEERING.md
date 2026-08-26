@@ -77,6 +77,9 @@ something and cannot say which row it is, see §11.
 | **Decisions** | `docs/adr/NNNN-*.md` | **Immutable once Accepted** | Why, and what we rejected | The session that decided |
 | **History** | `CHANGELOG.md` | **Generated** — never hand-edit | What changed | CI, from commit messages |
 | **Release state** | Git tags + `docs/RELEASE_AND_ROLLBACK.md` | Living | What users actually have | Human, at release time |
+| **Feature** | `docs/features/<name>.md` | Living, updated with the code | What a feature does, and every surface it touches | Whoever changes the feature |
+| **Field registry** | `docs/FIELD_REGISTRY.md` | Living, **enforced** | Every user field and where it is wired | Whoever adds a field |
+| **Handbook** | `docs/features/HANDBOOK.md` | **Generated** — never hand-edit | The user-facing half of every feature, in one place | `scripts/eng/build_feature_handbook.py` |
 | **Domain spec** | `MATCHING.md` | **Generated** — never hand-edit | The matching model itself | Cowork, from the inboxes |
 | **In flight** | `docs/plans/`, `*_INBOX.md`, `DEFERRED.md` | Transient | What is mid-build or owed | Whoever is building |
 | **Reference** | `docs/*_RULES.md`, `docs/audits/` | Dated snapshots | A narrow rule set or a point-in-time finding | Whoever investigated |
@@ -410,24 +413,150 @@ time; only `REPO_NAME` in the workflow and `tag_pattern` in `cliff.toml` change.
 
 ---
 
-## 11. When you do not know where it goes
+## 11. Feature documentation
 
-Ask, in order:
+`docs/features/<name>.md`. One file per feature, two audiences, because two documents about
+one feature drift apart and the doc you read *before* a change must be the same doc that
+explains the feature to a new hire.
+
+```
+## What it does        the user-facing description. Publishable as-is.
+## Surface map         every place this feature touches
+## Change protocol     what to check when you touch it
+## Backward compat.    what the released build depends on
+## Cross-product       what host / Pulse have or will have a stake in
+## History             dated one-liners, append-only
+```
+
+### The rule
+
+> **Read the feature doc before you change the feature. Update it in the same commit.**
+
+Not afterwards, and not "when the feature settles". The value is that the next session
+reads an accurate map, and a map updated later was wrong for however long that took. If
+your change touches a surface the doc does not list, **add the row** — that is the doc
+finding a gap in itself, which is what it is for.
+
+### Why a feature is not one screen
+
+Adding a field in onboarding means it must also be editable, displayed, possibly weighted
+in matching, and possibly meaningful to the host platform or Pulse. Miss one and you get a
+field the user gave you and cannot change, or one that silently stops feeding the algorithm
+it was collected for.
+
+This is not hypothetical. `group_preference` is collected from every user at signup, read
+only by the admin portal, and invisible to the product. `neighborhoods` drives search,
+groups and My Week, and the user has no way to set it. Both were found by the first
+mechanical audit, on 2026-08-26.
+
+### Two mechanisms, two jobs
+
+| | Catches | Enforced by |
+| --- | --- | --- |
+| `docs/FIELD_REGISTRY.md` | A **data element** that is half-wired | A contract test. Adding a field to `UsersRecord` fails the build until it is registered. |
+| `docs/features/*.md` | A **behavior** whose dependents you did not know about | `/ship`'s doc step, and the read-before-change rule. |
+
+A registry row tells you `pace_range` feeds the pace gate. A feature doc tells you what
+happens to Pace Match if you change how the gate works. You need both.
+
+The registry is enforced only for *presence*, not for correctness of its cells. A check
+claiming to verify wiring correctness would be lying; a human fills the cells, and the test
+guarantees the field enters the conversation at all.
+
+### Where the user-facing half is published
+
+Authored in the repo that owns the feature, next to the code. `HANDBOOK.md` is generated
+from those files by `scripts/eng/build_feature_handbook.py`, and is the readable,
+shareable, cross-product copy.
+
+**It is never authored separately, and never copied into Novara-Brain.** Brain holds
+business truth: positioning, strategy, people. A feature description is product truth, and
+duplicating it there creates exactly the drift Brain's own filing rules exist to prevent —
+*one canonical home per concept, not two competing ones*. Brain, host and Pulse read the
+handbook; they do not keep a copy.
+
+CI runs `build_feature_handbook.py --check`, so an edited feature doc with a stale handbook
+fails the PR rather than being discovered months later.
+
+### When a feature needs a doc
+
+**Yes** if a user can see it, or if more than one surface reads the same data to produce
+it. **No** for a component with one caller, a styling change, or anything wholly inside one
+widget — `docs/ARCHITECTURE.md` covers those.
+
+---
+
+## 12. Skills, routines and the brain
+
+Process only survives if something runs it. These are the moving parts.
+
+### Slash-command skills
+
+| Skill | When | Repos |
+| --- | --- | --- |
+| `/ship` | Work is complete and Jacky has said to push. Analyse, test, review, PR, CI, merge, cleanup. `--fast` skips review. | `novara`, `novara-pulse` |
+| `/build-ui` | Before building any UI component or screen. Reuse audit, token mapping, visual verification. | `novara`, `novara-pulse` |
+| `/add-feature` | Starting any new feature. Analytics and testing checklist. | `novara`, `novara-pulse` |
+| `/deploy`, `/deploy-web-prod`, `/deploy-web-test` | Deploying to any target. | `novara` |
+| `/build-ios`, `/build-android` | Store builds. Auto-bumps the build number. | `novara`, `novara-pulse` |
+| `/clean-dev` | Reclaiming disk, clearing orphaned simulator and Flutter processes. | `novara`, `novara-pulse` |
+| `/cross-repo-check` | Read-only sweep of every repo for unlanded work and drift. | user-level, all repos |
+
+### Scheduled routines
+
+| Task | Cadence | Does |
+| --- | --- | --- |
+| `dev-cleanup` | Mon/Wed/Fri 09:00 | Xcode and simulator caches, build artifacts, stale branches and worktrees |
+| `dep-check` | Mon 09:04 | Dependency sweep across all four code repos |
+| `weekly-repo-sweep` | Fri 15:30 | Runs `/cross-repo-check` before Jacky's 16:30 retro |
+| `nightly-brain-sync` | Daily 23:00 | Commits and pushes Novara-Brain, which Cowork cannot push itself |
+
+`weekly-repo-sweep` exists because `/cross-repo-check` was manual-only, and a drift check
+nobody remembers to run is a drift check that does not exist. It lands an hour before the
+Friday retro on purpose: what it finds becomes retro input rather than a separate errand.
+
+### Novara-Brain's relationship to the code repos
+
+Brain is **not a code repo** and takes no part in CI, changelogs, ADRs, or the gate. It
+holds one `ENGINEERING.md` mirror so brain and Cowork sessions see the same conventions.
+
+The boundary runs in both directions:
+
+- **Code repos never store business truth.** Positioning, competitor state, traction
+  numbers and people live in Brain. A number pasted into a code doc goes stale silently.
+- **Brain never stores product truth.** How a feature works lives in `docs/features/`, and
+  Brain reads the generated handbook rather than keeping a copy.
+
+The one channel that crosses deliberately is matching: `MATCHING.md` is generated from
+`Novara-Brain/03-product/matching/source/` and mirrored into three code repos, with
+decisions flowing back through `MATCHING_INBOX.md`. That is a designed pipeline with a
+drift check, not an exception.
+
+---
+
+## 13. When you do not know where it goes
+
+Ask, in order. Stop at the first yes.
 
 1. **Is it a rule an agent must obey in one repo?** → `CLAUDE.md`, one line.
 2. **Is it a decision that would be expensive to reverse?** → an ADR, now, this session.
 3. **Is it something that must never stop being true?** → `docs/INVARIANTS.md` plus the
    contract test that proves it.
-4. **Is it how the pieces connect today?** → `docs/ARCHITECTURE.md`.
-5. **Is it a dependency or tooling pick, so nobody re-investigates it?** →
+4. **Is it what a feature does, or a surface it touches?** → `docs/features/<name>.md`, in
+   the same commit as the code.
+5. **Is it a new field on a user?** → `docs/FIELD_REGISTRY.md`. The build fails until it is
+   there.
+6. **Is it how the pieces connect today?** → `docs/ARCHITECTURE.md`.
+7. **Is it a dependency or tooling pick, so nobody re-investigates it?** →
    `docs/DECISION_LOG.md`.
-6. **Is it a matching-model change?** → `MATCHING_INBOX.md`, in the same commit as the
+8. **Is it a matching-model change?** → `MATCHING_INBOX.md`, in the same commit as the
    code.
-7. **Is it owed to another repo?** → the handoff file that repo reads
+9. **Is it owed to another repo?** → the handoff file that repo reads
    (`novara-host/docs/pending-rules.md`), plus tell Jacky.
-8. **Is it in flight and will be obsolete when it lands?** → `docs/plans/` or
-   `DEFERRED.md`.
-9. **None of the above** → it is probably a commit message. Write a good one.
+10. **Is it in flight and will be obsolete when it lands?** → `docs/plans/` or
+    `DEFERRED.md`.
+11. **Is it business truth rather than product truth?** → Novara-Brain, never a code repo.
+12. **None of the above** → it is probably a commit message. Write a good one.
 
 If it still fits nowhere, that is a signal this standard has a gap. Say so rather than
-inventing a tenth location.
+inventing a thirteenth location.
