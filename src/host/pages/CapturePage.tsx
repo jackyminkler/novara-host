@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AtSign, Check, Link2, Mail, Phone, Plus, UserPlus } from 'lucide-react'
+import {
+  AtSign, Check, Link2, Mail, Mic, Phone, Plus, QrCode, Square, Trash2, UserPlus,
+} from 'lucide-react'
 import { useAsync, useMutation } from '../useApi'
 import { useHost } from '../AuthProvider'
 import {
-  Avatar, Button, Card, Chip, Eyebrow, GhostButton, Loading, QuietButton, Sub, SubTitle, cx,
+  Avatar, Button, Card, Chip, Eyebrow, GhostButton, Loading, OutlineButton, QuietButton, Sub,
+  SubTitle, cx,
 } from '../../ui/primitives'
-import { Field, Input, Textarea } from '../../ui/form'
+import { Field, InlineText, Input, Textarea } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
 import type { CapturedContact, EventDoc, Person } from '../../data/types'
 import { addDays, formatDayLong, formatDue, startOfDay, toDateKey } from '../../lib/dates'
@@ -108,6 +111,15 @@ export default function CapturePage() {
       </aside>
 
       <main className="min-w-0 flex-1 px-4 py-4 sm:px-[18px]">
+        <div className="mb-3 flex items-center justify-end">
+          <Link to="/app/card">
+            <QuietButton>
+              <QrCode size={13} />
+              Your card
+            </QuietButton>
+          </Link>
+        </div>
+
         <FollowUpHub
           contacts={contacts}
           people={data?.people ?? []}
@@ -165,6 +177,8 @@ interface FollowUpRow {
   name: string
   due: string
   done: boolean
+  /** Marked here, played on the detail. A list is not a playlist. */
+  hasVoice: boolean
 }
 
 const SOURCE_CAPTION: Record<FollowUpRow['source'], string> = {
@@ -237,6 +251,7 @@ function FollowUpHub({
           name: c.name,
           due: c.followUp!.due,
           done: c.followUp!.done,
+          hasVoice: Boolean(c.voiceNote),
         })),
       ...people
         .filter((p) => p.followUp)
@@ -247,6 +262,7 @@ function FollowUpHub({
           name: p.fullName || p.email,
           due: p.followUp!.due,
           done: p.followUp!.done,
+          hasVoice: false,
         })),
     ]
     // Open first, soonest due at the top. Done ones stay, newest first, so a
@@ -339,7 +355,12 @@ function FollowUpHub({
                 {row.name}
               </button>
             )}
-            <span className="block text-[11px] text-mut">{SOURCE_CAPTION[row.source]}</span>
+            <span className="flex items-center gap-[5px] text-[11px] text-mut">
+              {SOURCE_CAPTION[row.source]}
+              {row.hasVoice && (
+                <Mic size={11} className="text-vio" aria-label="Has a voice note" />
+              )}
+            </span>
           </span>
 
           {!row.done && <Chip tone="vio">{formatDue(row.due)}</Chip>}
@@ -500,6 +521,20 @@ function ContactDetail({
         </p>
       </Card>
 
+      <Card className="mb-3">
+        <Eyebrow className="mb-[3px]">In their words</Eyebrow>
+        <InlineText
+          value={contact.quote ?? ''}
+          ariaLabel="Something they said"
+          placeholder="Something they actually said, worth keeping"
+          multiline
+          onCommit={(next) => void mutate((api) => api.updateContact(contact.id, { quote: next }))}
+          className="!text-[13px] !leading-[1.55]"
+        />
+      </Card>
+
+      <VoiceNote contact={contact} onChanged={onChanged} />
+
       <div className="flex flex-wrap items-center gap-3">
         {openFollowUp && (
           <>
@@ -529,6 +564,159 @@ function ContactDetail({
         )}
       </div>
     </>
+  )
+}
+
+// ---------------------------------------------------------------- voice note
+
+/**
+ * Two minutes, which is long enough to say who someone was and what they
+ * wanted and short enough that nobody has to sit through it later.
+ */
+const MAX_SECONDS = 120
+
+const clock = (seconds: number): string =>
+  `${Math.floor(seconds / 60)}:${`${seconds % 60}`.padStart(2, '0')}`
+
+/**
+ * M1 voice notes. Recorded here, uploaded through the seam, played back with
+ * the browser's own player: an audio element does scrubbing, speed and volume
+ * better than anything worth writing for a thirty second note.
+ *
+ * The recording never touches component state. A MediaRecorder and its stream
+ * outlive a render, so both live in refs and are stopped on unmount, or a
+ * capture switched mid-sentence leaves the microphone light on.
+ */
+function VoiceNote({
+  contact,
+  onChanged,
+}: {
+  contact: CapturedContact
+  onChanged: () => void
+}) {
+  const { mutate, busy, error } = useMutation(onChanged)
+  const [recording, setRecording] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [blocked, setBlocked] = useState<string | null>(null)
+  const recorder = useRef<MediaRecorder | null>(null)
+  const ticker = useRef<number | null>(null)
+
+  const clearTicker = () => {
+    if (ticker.current !== null) window.clearInterval(ticker.current)
+    ticker.current = null
+  }
+
+  const stop = useCallback(() => {
+    if (recorder.current?.state === 'recording') recorder.current.stop()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearTicker()
+      if (recorder.current?.state === 'recording') recorder.current.stop()
+    }
+  }, [])
+
+  const start = async () => {
+    setBlocked(null)
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setBlocked('This browser cannot record audio. Try Chrome or Safari.')
+      return
+    }
+
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setBlocked('Microphone access is blocked. Allow it in your browser settings to record.')
+      return
+    }
+
+    // Opus in webm where it exists, the browser's own default where it does
+    // not, which is what Safari needs.
+    const preferred = 'audio/webm;codecs=opus'
+    const supported = MediaRecorder.isTypeSupported?.(preferred) ?? false
+    const active = new MediaRecorder(stream, supported ? { mimeType: preferred } : undefined)
+    const chunks: BlobPart[] = []
+    const startedAt = Date.now()
+
+    active.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data)
+    }
+
+    active.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop())
+      clearTicker()
+      setRecording(false)
+      setElapsed(0)
+      const seconds = Math.min(MAX_SECONDS, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
+      const blob = new Blob(chunks, { type: active.mimeType || 'audio/webm' })
+      void mutate(async (api) => {
+        await api.saveVoiceNote(contact.id, blob, seconds)
+        track('hp_voice_note_recorded', { durationSec: seconds })
+      })
+    }
+
+    recorder.current = active
+    active.start()
+    setRecording(true)
+    setElapsed(0)
+    ticker.current = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - startedAt) / 1000)
+      setElapsed(seconds)
+      if (seconds >= MAX_SECONDS) stop()
+    }, 250)
+  }
+
+  const remove = () => {
+    if (!window.confirm('Delete this voice note? It cannot be brought back.')) return
+    void mutate((api) => api.deleteVoiceNote(contact.id))
+  }
+
+  const note = contact.voiceNote
+
+  return (
+    <Card className="mb-3">
+      <div className="mb-[6px] flex flex-wrap items-center justify-between gap-2">
+        <Eyebrow>Voice note</Eyebrow>
+        {note && <span className="text-[11px] text-mut">{clock(note.durationSec)}</span>}
+      </div>
+
+      {note ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <audio controls src={note.url} className="h-9 min-w-0 flex-1" />
+          <QuietButton onClick={remove} disabled={busy} aria-label="Delete this voice note">
+            <Trash2 size={13} />
+            Delete
+          </QuietButton>
+        </div>
+      ) : recording ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <OutlineButton onClick={stop}>
+            <Square size={12} />
+            Stop
+          </OutlineButton>
+          <span className="flex items-center gap-[6px] text-[12.5px] text-vio">
+            <span className="size-[7px] animate-pulse rounded-full bg-vio" />
+            Recording {clock(elapsed)}
+          </span>
+          <span className="text-[11.5px] text-mut">Stops on its own at two minutes.</span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <OutlineButton onClick={() => void start()} disabled={busy}>
+            <Mic size={13} />
+            {busy ? 'Saving' : 'Record'}
+          </OutlineButton>
+          <span className="text-[12.5px] text-sec">
+            Say who they were while you still remember. Two minutes at most.
+          </span>
+        </div>
+      )}
+
+      {blocked && <p className="mt-2 text-[12px] text-rosek">{blocked}</p>}
+      {error && <p className="mt-2 text-[12px] text-rosek">{error}</p>}
+    </Card>
   )
 }
 

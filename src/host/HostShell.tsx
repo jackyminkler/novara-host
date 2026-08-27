@@ -35,6 +35,7 @@ import PersonDetailPage from "./pages/PersonDetailPage";
 import PartnerDetailPage from "./pages/PartnerDetailPage";
 import PartnerFormPage from "./pages/PartnerFormPage";
 import CapturePage from "./pages/CapturePage";
+import HostCardPage from "./pages/HostCardPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import TemplateEditorPage from "./pages/TemplateEditorPage";
 import RecapEditorPage from "./event/RecapEditorPage";
@@ -222,6 +223,9 @@ export default function HostShell() {
           <Route path="people" element={<PeoplePage />} />
           <Route path="people/:personId" element={<PersonDetailPage />} />
           <Route path="capture" element={<CapturePage />} />
+          {/* Not in the nav: it is reached from Capture, which is where a
+              host already is when handing out a card. */}
+          <Route path="card" element={<HostCardPage />} />
           {/* PRD 3.4 called this orgs; the wireframes call it partners. */}
           <Route
             path="orgs"

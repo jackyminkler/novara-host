@@ -16,15 +16,15 @@ runners. Write the "What it does" section for them.
 - [`guest-crm.md`](guest-crm.md) — the two lists and everything that moves between them:
   captures as the fast inbox, people as the durable list, the shared import pipeline, segments
   and export, the follow-up hub, promotion, and the `appUserUid` identity link.
+- [`guest-links.md`](guest-links.md) — how everyone who is not the host takes part: the two
+  HTTP functions, the four token scopes and the actions each one accepts, revocation, the
+  share card, and the no-account guarantee.
 
 ## Owed
 
 The features that most need one, because more than one surface reads the same data to produce
 them:
 
-- **Guest links** — the two-HTTP-function token model (`hpGuestView` / `hpGuestSubmit`),
-  scope handling, and the no-account guarantee. Any change here touches rules, both
-  functions, and every guest-facing route.
 - **Events and run-of-show** — the subcollections (`parties`, `tasks`, `runOfShow`) that are
   deliberately **not** `hp_`-prefixed, which is why a collection-group rule is banned.
 - **Host onboarding** — open Google sign-in and per-document `ownerUid` isolation, which

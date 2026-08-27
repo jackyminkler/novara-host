@@ -477,6 +477,50 @@ export function buildStore(): MockStore {
     createdAt: '2026-06-01T12:00:00.000Z',
   }
 
+  /**
+   * A confirmed event with no parties on it at all, which is the solo-first
+   * principle as a fixture: one person, one date, one plan, nothing sent to
+   * anyone. It is also the only event here that is both confirmed and still
+   * ahead, so it is what the share card names as context and what the
+   * follow-up hub writes its invite line from.
+   */
+  const embarcadero: EventDoc = {
+    id: 'embarcadero-easy-miles',
+    ownerUid: HOST,
+    sourceKey: null,
+    title: 'Embarcadero easy miles',
+    status: 'confirmed',
+    description: 'A slow four miles along the water, coffee after for whoever wants it.',
+    dateOptions: [{ id: 'e-opt-a', startsAt: '2026-09-10T07:15:00', label: '' }],
+    confirmedDateOptionId: 'e-opt-a',
+    location: {
+      name: 'Embarcadero, Pier 7',
+      meetPoint: 'Bench at the foot of the pier',
+      finishPoint: 'Ferry Building steps',
+      notes: 'Flat the whole way. Bathrooms at the Ferry Building.',
+    },
+    links: [
+      { id: 'el1', label: 'Sign up', url: 'https://lu.ma/embarcadero-easy', owner: 'host', status: 'final' },
+    ],
+    capacityTarget: 40,
+    campaignGoal: '',
+    governance: {
+      officialListing: 'Luma',
+      listingUrl: 'https://lu.ma/embarcadero-easy',
+      guestContactsOwner: 'Novara, assigned host',
+      dualPosts: '',
+    },
+    signupCount: 18,
+    recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
+    spendLog: [],
+    talkTracks: [],
+    shotList: [],
+    templateId: null,
+    hostUid: HOST,
+    hostDisplayName: 'Maya',
+    createdAt: '2026-08-24T09:00:00.000Z',
+  }
+
   const answered = (value: Party['dateResponses'][string]['value'], source: 'link' | 'host' = 'link') => ({
     value,
     source,
@@ -940,7 +984,7 @@ export function buildStore(): MockStore {
 
   return {
     orgs,
-    events: [presidio, marina],
+    events: [presidio, marina, embarcadero],
     parties,
     tasks,
     runOfShow,

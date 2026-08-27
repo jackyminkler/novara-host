@@ -35,6 +35,19 @@ export type AnalyticsEvent =
   | 'hp_csv_import_completed'
   | 'hp_followup_invite_copied'
   | 'hp_person_promoted'
+  // M1 guest surface. The deliverable toggle is the only evidence that an
+  // agreement written down gets worked by the side that owes it, rather than
+  // by the host ticking boxes on their behalf.
+  | 'hp_guest_deliverable_toggled'
+  // M1 share card. Three events, one question: does handing someone a link
+  // instead of a phone number actually come back. A link created that is
+  // never viewed, or viewed and never answered, says the card is a nice idea
+  // and not a working one.
+  | 'hp_card_link_created'
+  | 'hp_card_viewed'
+  | 'hp_card_contact_left'
+  // M1 voice notes.
+  | 'hp_voice_note_recorded'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 
