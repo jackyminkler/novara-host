@@ -45,8 +45,14 @@ them in `firebase` data mode until these blocks are applied, so this is the gate
 feature off mock.
 
 `hp_availabilitySettings` is keyed by uid, one document per host, so the owner check is on the
-document id rather than a field. That is deliberate: it makes the settings unlistable and needs
-no index.
+document id rather than a field. **Apply it verbatim rather than folding it into the `hpOwns()`
+shape for consistency.**
+
+The document does carry an `ownerUid`, so `hpOwns()` would also work, and that is exactly why this
+needs saying: the reason is not that the other form fails. It is that a document-id check does not
+depend on a field having been written correctly. The id *is* the owner, so no write, however
+buggy, can produce a document whose id and `ownerUid` disagree in a way the rule would accept.
+`hpOwns()` trusts a field; this trusts the address.
 
 ```
 match /hp_availabilitySettings/{uid} {
