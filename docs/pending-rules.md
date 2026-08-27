@@ -114,12 +114,12 @@ by document id for the guest function.
 deployed ruleset carries the open-signup `hpIsHost()`, the `hp_feedback` block, and `hp_config`
 denied to everyone. All three landed.
 
-**But the consumer repo's `main` carries none of them.** They live on an unmerged branch,
-`hp-rules-open-signup-feedback` (`1518957`), which is what was deployed from. `main` at `bc1057a`
-still has the allowlist form of `hpIsHost()` and no `hp_feedback` block. A
-`firebase deploy --only firestore` from `main` would revert open signup and drop `hp_feedback`,
-locking out new signups and breaking the feedback button. Owner scoping and `hp_people` would
-survive, so the damage is partial rather than total, which arguably makes it easier to miss.
+**They were stranded off `main` for a day, and no longer are.** They were deployed from an
+unmerged branch, `hp-rules-open-signup-feedback` (`1518957`). `main` at `bc1057a` still had the
+allowlist form of `hpIsHost()` and no `hp_feedback` block, so a `firebase deploy --only firestore`
+from `main` would have reverted open signup and dropped `hp_feedback`, locking out new signups and
+breaking the feedback button. Owner scoping and `hp_people` would have survived, so the damage
+would have been partial rather than total, which is what would have made it easy to miss.
 
 **This is the second time in one day.** The same thing happened with `b88363f`, applied to
 production on 2026-08-19 and stranded off `main` until PR #199 merged it on 2026-08-24. Twice in
@@ -128,8 +128,19 @@ on and the merge is treated as tidying. The deploy is the thing that feels final
 downstream forces the merge. Worth a guard, for example refusing to deploy rules from a ref that is
 not an ancestor of `main`.
 
-**Fix: merge `hp-rules-open-signup-feedback` into `main`.** Nothing needs redeploying; production is
-already correct.
+**Resolved 2026-08-26: that branch merged as PR #204.** Consumer `main` pinned at `a781b62`
+carries the open-signup form of `hpIsHost()`, `hp_config` denied to everyone, and the
+`hp_feedback` block. Settled by reading the function bodies, not by grepping for the expression,
+per the trap below. The only surviving `allowlist` matches in that file are four comment lines;
+no live condition reads it. Deploying rules from `main` is safe again. Nothing needed redeploying;
+production was correct throughout.
+
+**Production re-verified first-hand the same day**, from the consumer repo, which unlike this one
+has the Firebase MCP: the deployed `novarasocial-dev` ruleset was read back through the Rules API
+and its `hp_` section matches `main` at `a781b62`: the same ten blocks (`hp_config`, `hp_orgs`,
+`hp_events` with its five subcollections, `hp_templates`, `hp_contacts`, `hp_availability`,
+`hp_moments`, `hp_guestTokens`, `hp_people`, `hp_feedback`), open-signup `hpIsHost()` included.
+Deployed, `main`, and this repo's `emulator/firestore.rules` now agree.
 
 **A third grep trap, caught this time.** Checking whether `main` had the change,
 `grep -c "sign_in_provider != 'anonymous'"` returned 1 and looked like a pass. It was matching a
