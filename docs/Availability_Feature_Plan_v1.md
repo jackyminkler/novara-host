@@ -170,6 +170,39 @@ M0 Storage non-goal intact and means the raw calendar never leaves her machine.
 
 ---
 
+## 4b. Where the consumer app deliberately differs, 2026-08-26
+
+The Flutter consumer app built the same capability on its own branch
+(`claude/google-calendar-availability-87130e` in the novara repo, ADR-0004 there). It kept the
+load-bearing semantics: windows not slots, closed-is-a-flag, buffer padded on the busy side,
+clamp to now, a 45 minute floor, derive only on the owner's device, and store only derived
+windows. Four differences are deliberate and are recorded here so nobody later assumes the two
+products agree about everything.
+
+1. **Weekday index runs 0 = Monday there, 0 = Sunday here.** Their convention is entrenched in
+   two schemas and the matching scorer. This is the divergence most likely to cause a silent
+   wrong answer, because both sides are plain numbers: a weekday array crossing the boundary
+   unconverted produces a plausible result that is off by one, and `weekdays` on `SuggestOptions`
+   is exactly such an array. If host and consumer availability data ever meet, convert at the
+   boundary and give the two forms different field names so a raw number cannot pass for the
+   other.
+
+2. **They allow multiple windows per day; this repo allows one.** Runners do two-a-days, and a
+   single `DayHours` per weekday cannot express "open 6 to 8am and again 6 to 8pm". Their model is
+   the better one and this repo should probably adopt it: today a host wanting a morning run slot
+   and an evening call slot has to open the whole middle of the day to get both.
+
+3. **They dropped the travel and out-of-town rules for v1.** No travel hints, no home city, no
+   weekend extension. An all-day event with a location still clears the day. Reasonable where the
+   question is "can this person run on Tuesday" rather than "is she in another state all weekend",
+   but it means a flight blocks only its own hours over there.
+
+4. **They use no sensitive scopes at all.** Device calendar first, `calendar.freebusy` second. The
+   consumer app therefore never draws on the shared project's 100 lifetime unapproved-sensitive
+   grants, which this repo's host flow does spend from.
+
+---
+
 ## 5. Not now
 
 **Weekly caps on how much she meets.** Rejected for now, and worth recording why: a cap answers
