@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, X } from 'lucide-react'
 import { BackLink, FocusColumn } from './Page'
@@ -8,8 +8,9 @@ import {
   Button, Card, Chip, GhostButton, KV, Loading, PageTitle, QuietButton, Sub, cx,
 } from '../../ui/primitives'
 import { Field, Input, Label, Select, Textarea } from '../../ui/form'
-import type { AvailabilityBlock, DateOption, Org, Template } from '../../data/types'
-import { awayConflict, daysBetween, formatShort, holidayOn, isRushRunway, pluralDays, toDateKey } from '../../lib/dates'
+import type { AvailabilityBlock, AvailabilitySettings, DateOption, Org, Template } from '../../data/types'
+import { awayConflict, daysBetween, formatShort, holidayOn, isRushRunway, pluralDays, toDateKey, toLocalInputValue } from '../../lib/dates'
+import { suggest } from '../../lib/availability'
 
 // Short stepped flow: template, basics, dates, parties, then the workspace
 // with the materialised plan fully editable. Parties are an optional step;
@@ -25,6 +26,9 @@ const STEP_LABEL: Record<Step, string> = {
 }
 
 let optionSeq = 0
+const DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const DAY_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 const nextOptionId = () => `opt-${Date.now().toString(36)}-${(optionSeq += 1)}`
 
 export default function NewEventPage() {
@@ -43,12 +47,13 @@ export default function NewEventPage() {
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string>>({})
 
   const { data, loading } = useAsync(async (api) => {
-    const [templates, orgs, availability] = await Promise.all([
+    const [templates, orgs, availability, settings] = await Promise.all([
       api.listTemplates(),
       api.listOrgs(),
       api.listAvailability(),
+      api.getAvailabilitySettings(),
     ])
-    return { templates, orgs, availability }
+    return { templates, orgs, availability, settings }
   }, [])
 
   const { mutate, busy, error } = useMutation()
@@ -170,6 +175,8 @@ export default function NewEventPage() {
         <StepDates
           options={dateOptions}
           availability={data?.availability ?? []}
+          settings={data?.settings ?? null}
+          template={template}
           onChange={setDateOptions}
           onBack={() => setStep(2)}
           onNext={() => setStep(4)}
@@ -331,17 +338,48 @@ function BlankSlots({
 function StepDates({
   options,
   availability,
+  settings,
+  template,
   onChange,
   onBack,
   onNext,
 }: {
   options: DateOption[]
   availability: AvailabilityBlock[]
+  settings: AvailabilitySettings | null
+  template: Template | null
   onChange: (next: DateOption[]) => void
   onBack: () => void
   onNext: () => void
 }) {
   const [draft, setDraft] = useState('')
+  // A template already says how long it runs, so asking again is a question
+  // with an answer sitting right there.
+  const [eventHours, setEventHours] = useState(
+    template?.defaults.durationMinutes ? Math.round(template.defaults.durationMinutes / 60) : 2,
+  )
+
+  // Nothing in a template records a weekday, and offsets are relative to the
+  // event so they cannot imply one. Asking is better than inferring wrongly,
+  // and it is the control that answers "the next three Saturdays".
+  const [weekdays, setWeekdays] = useState<number[]>([])
+
+  // Only the host for now. The shape is a participant list because partners
+  // connecting their own calendars is the same call with more entries.
+  const suggestions = useMemo(() => {
+    const windows = settings?.windows ?? []
+    if (windows.length === 0) return []
+    const taken = new Set(options.map((o) => new Date(o.startsAt).getTime()))
+    return suggest(
+      [{ id: 'host', label: 'You', free: windows.map((w) => ({ start: w.s, end: w.e })) }],
+      {
+        durationMinutes: eventHours * 60,
+        limit: 6,
+        preferredStart: template?.defaults.startTime,
+        weekdays,
+      },
+    ).filter((s) => !taken.has(s.start))
+  }, [settings?.windows, eventHours, options, template?.defaults.startTime, weekdays])
 
   const add = () => {
     if (!draft || options.length >= 5) return
@@ -391,6 +429,82 @@ function StepDates({
           )
         })}
       </div>
+
+      {suggestions.length > 0 && options.length < 5 && (
+        <div className="mb-[10px]">
+          <p className="mb-[6px] text-[11px] font-medium uppercase tracking-wide text-mut">
+            {template
+              ? `Open in your calendar, shaped like ${template.name.toLowerCase()}`
+              : 'Open in your calendar'}
+          </p>
+          <div className="flex flex-wrap gap-[6px]">
+            {suggestions.slice(0, 4).map((s) => (
+              <button
+                key={s.start}
+                type="button"
+                onClick={() =>
+                  onChange([
+                    ...options,
+                    { id: nextOptionId(), startsAt: toLocalInputValue(s.start), label: '' },
+                  ])
+                }
+                className="hairline rounded-[9px] border border-line bg-surface px-[10px] py-[6px] text-[12px] font-medium text-ink transition hover:border-vio hover:text-vio"
+              >
+                {formatShort(new Date(s.start).toISOString())}
+                {template?.defaults.startTime && !s.atPreferredTime && (
+                  <span className="ml-[5px] text-mut">later than usual</span>
+                )}
+              </button>
+            ))}
+            <select
+              value={String(eventHours)}
+              onChange={(e) => setEventHours(Number(e.target.value))}
+              className="hairline rounded-[9px] border border-line bg-field px-[9px] py-[6px] text-[12px] text-sec"
+              aria-label="How long the event runs"
+            >
+              {[1, 2, 3, 4, 6].map((h) => (
+                <option key={h} value={h}>
+                  {h} hr
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-[6px] flex flex-wrap items-center gap-[4px]">
+            <span className="mr-1 text-[11px] text-mut">Only</span>
+            {DAY_INITIALS.map((letter, day) => {
+              const on = weekdays.includes(day)
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  aria-label={DAY_FULL[day]}
+                  aria-pressed={on}
+                  onClick={() =>
+                    setWeekdays((prev) =>
+                      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+                    )
+                  }
+                  className={cx(
+                    'hairline h-[24px] w-[24px] rounded-full border text-[11px] font-medium transition',
+                    on ? 'border-vio bg-viot text-vio' : 'border-line bg-surface text-mut',
+                  )}
+                >
+                  {letter}
+                </button>
+              )
+            })}
+            {weekdays.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setWeekdays([])}
+                className="ml-1 text-[11px] text-mut transition hover:text-ink"
+              >
+                Any day
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {options.length < 5 && (
         <div className="mb-[10px] flex gap-2">

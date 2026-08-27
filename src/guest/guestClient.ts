@@ -1,4 +1,4 @@
-import type { GuestAction, GuestView } from './guestTypes'
+import type { GuestAction, GuestPayload } from './guestTypes'
 import { dataMode } from '../data/api'
 
 // Guests never touch Firestore. Everything goes through the two HTTP
@@ -11,7 +11,7 @@ export class GuestError extends Error {
   }
 }
 
-async function callFunction(path: string, init?: RequestInit): Promise<GuestView> {
+async function callFunction(path: string, init?: RequestInit): Promise<GuestPayload> {
   let response: Response
   try {
     response = await fetch(path, init)
@@ -20,22 +20,23 @@ async function callFunction(path: string, init?: RequestInit): Promise<GuestView
   }
   if (response.status === 404 || response.status === 403) throw new GuestError('invalid')
   if (!response.ok) throw new GuestError('network')
-  return (await response.json()) as GuestView
+  return (await response.json()) as GuestPayload
 }
 
-export async function fetchGuestView(token: string): Promise<GuestView> {
+export async function fetchGuestView(token: string, you?: string): Promise<GuestPayload> {
   if (dataMode === 'mock') {
     const { mockGuestView } = await import('./mockGuest')
-    return mockGuestView(token)
+    return mockGuestView(token, you)
   }
-  return callFunction(`/api/guest/view?t=${encodeURIComponent(token)}`)
+  const suffix = you ? `&you=${encodeURIComponent(you)}` : ''
+  return callFunction(`/api/guest/view?t=${encodeURIComponent(token)}${suffix}`)
 }
 
 export async function submitGuestAction(
   token: string,
   action: GuestAction,
   payload: Record<string, unknown>,
-): Promise<GuestView> {
+): Promise<GuestPayload> {
   if (dataMode === 'mock') {
     const { mockGuestSubmit } = await import('./mockGuest')
     return mockGuestSubmit(token, action, payload)
