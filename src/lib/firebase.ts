@@ -6,10 +6,15 @@ import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
 // fake config, local auth and firestore. See README for the two commands.
 export const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true'
 
+// Mock mode never talks to Firebase, but this module still loads on the host
+// routes, so it takes the same offline demo config the emulators use. Without
+// it, missing env values make getAuth throw at import time on every mock boot.
+const offline = useEmulators || import.meta.env.VITE_DATA_MODE === 'mock'
+
 // Real config values come from .env.local (see .env.example). They identify
 // the shared Novara Firebase project; access control lives in security rules
 // and hp_config/allowlist, not in keeping these values hidden.
-const firebaseConfig = useEmulators
+const firebaseConfig = offline
   ? {
       apiKey: 'demo-key',
       authDomain: 'localhost',
