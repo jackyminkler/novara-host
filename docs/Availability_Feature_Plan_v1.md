@@ -106,6 +106,86 @@ Acceptance: two friends cannot book the same time.
 
 ---
 
+## 2b. F20. Plans: deadlines, the pick, and the invite
+
+Added 2026-08-26 after PR #1 merged. Jacky's ask, generalized: someone brand new signs up,
+creates a plan ("find 90 minutes for the ten of us, evenings or weekends, before September
+12"), sends one link to the group chat, everyone drops in their calendar or picks days by
+hand and votes, the organizer picks a time, and everyone's calendar gets the invite. The
+worked example is a fantasy football draft night; nothing in the feature knows that. Every
+piece is a global capability on the existing huddle, not a template.
+
+**The user-facing word is "plan"** (Jacky, 2026-08-26). Code keeps `Huddle` and `hp_huddles`;
+every UI string says plan.
+
+The huddle from PR #1 already carries the group link, freebusy joins, one moving vote per
+person, and `settledStartsAt`. F20 finishes the journey:
+
+**F20.1 Hours, not just weekdays.** `weekdays: number[]` is replaced by `hours: DayHoursDoc[]`
+(7 entries, the same shape as open hours: an open flag plus a start and end per weekday).
+"After work or weekends" is different hours on different days, which weekday chips cannot
+say. It also fixes a real flaw: freebusy counts 3am as free, so an unconstrained huddle
+could rank 2am as the best slot. Default when creating: every day open 09:00 to 22:00.
+Old documents with `weekdays` are migrated on read.
+
+**F20.2 Allowed windows are published, not recomputed.** The organizer's browser turns
+`hours` into absolute `allowed: {s,e}[]` intervals at create and edit time, exactly the way
+availability publishing already works. Guests in any zone consume absolute milliseconds and
+never convert wall clock, so there is no second zone conversion to get wrong. `suggest()`
+gains one option, `within`, that intersects every participant's free time with those
+intervals before coverage runs.
+
+**F20.3 Two dates with different meanings.** `respondBy` (answers close) and `happenBy`
+(the thing must have happened by then), both optional, stored as a `YYYY-MM-DD` string for
+editing plus a precomputed end-of-day epoch millisecond for enforcement. The functions
+compare numbers and never touch zones. Phase is derived, in order: `settled` (a pick
+exists), else `passed` (happenBy has gone with no pick), else `closed` (respondBy has
+gone), else `open`. Joins and votes are accepted only while open; the guest page renders
+all four states, so someone coming back after the cutoff sees the pick or "no time was
+picked". Plan links default their expiry to two weeks after `happenBy` so the page
+outlives the outcome.
+
+**F20.4 Joining by hand.** The guest page currently requires a Google read to join. It
+gains a manual path: pick the days that could work from the plan's own allowed days, and
+your free time is those days' allowed windows. One tap per day, works with no Google at
+all, and provenance is kept (`source: 'calendar' | 'manual'`) the way date responses
+already keep theirs. Joining also asks for an optional email, "for the calendar invite
+later", never shown to other guests.
+
+**F20.5 The pick.** The plan detail page shows the ranked times with turnout and votes.
+The organizer picks one, which opens a small composer prefilled with the time: adjust
+start or duration, add a location and notes, lock it in. That writes `settledStartsAt`,
+`settledEndsAt`, `location`, `notes`. Un-picking reopens the plan.
+
+**F20.6 The invite.** After the pick: create a Google Calendar event on the organizer's
+own calendar through the existing tagged write path, with everyone who left an email as an
+attendee and `sendUpdates=all`, so Google delivers the invites and every later edit. This
+is the first caller `googleWrite.ts` gets, and it gains attendee support and returns the
+event link. Editing details after creation updates the same tagged event. For anyone who
+left no email, the settled guest page offers "Add to Google Calendar" and a downloadable
+.ics, so nobody is stranded. No email provider anywhere.
+
+**F20.7 A first-class surface.** Plans move out of the availability page into their own
+sidebar item: a list page with the create flow, and a detail page per plan. Guests keep
+the same `/g/{token}` link through the same two functions with the same `huddle` scope.
+
+Also fixed under this feature: `GUEST_ACTIONS` in the functions build root never listed
+`join_huddle` and `cast_vote`, so real (non-mock) huddle submissions were refused as
+`unknown_action` before reaching the scope handler. The two runtime allowlists now agree
+with the type.
+
+No new collections. `hp_huddles` gains fields only, so the pending rules blocks apply
+unchanged. New Amplitude events: `hp_plan_created` (renaming `hp_huddle_created`, recorded
+in the build log), `hp_plan_joined`, `hp_plan_vote_cast`, `hp_plan_settled`,
+`hp_plan_invite_created`.
+
+Acceptance: a signed-up stranger creates a plan and shares it in under a minute; a guest
+with no Google account joins by hand and votes in under 60 seconds at 390 px; after the
+deadline the page says answers are closed; after the pick every guest can put the time on
+their calendar in two taps; after an unpicked cutoff the page says so plainly.
+
+---
+
 ## 3. State of play, 2026-08-26
 
 Everything below is committed and pushed on `claude/personal-availability-calendar-fa0d89`
