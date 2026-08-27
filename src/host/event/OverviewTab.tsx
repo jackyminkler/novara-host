@@ -6,16 +6,22 @@ import { Field, Input, InlineText, Select } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
 import { useEvent } from './EventContext'
 import { useHost } from '../AuthProvider'
-import { useMutation } from '../useApi'
+import { useAsync, useMutation } from '../useApi'
 import { ownerLabel } from '../../data/profiles'
 import { track } from '../../lib/analytics'
 import type { EventDoc, EventLink, LinkStatus, Party } from '../../data/types'
 import { formatLong, formatShort, isOverdue } from '../../lib/dates'
 import { Button, GhostButton } from '../../ui/primitives'
+import { clashedEvents, dateClashes, permitChecks, venueParty } from './siteChecks'
 
 // Overview carries the confirmed or pending date, the party summary, open
-// tasks by owner, the links list, location, and the page governance block:
-// which listing is official and who holds the guest contacts.
+// tasks by owner, the links list, location, the talk tracks for the day, and
+// the page governance block: which listing is official and who holds the guest
+// contacts.
+//
+// M1 adds two quiet warnings: the site's permit thresholds against what this
+// event plans to be, and another event of the host's sitting on the same day.
+// Both are chips, neither blocks anything.
 
 const PARTY_STATUS = {
   invited: { label: 'Invited', tone: 'gray' as const },
@@ -32,6 +38,13 @@ export default function OverviewTab() {
   const eventId = event.id
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
   const lookup = { parties, orgs, crew, hostName }
+
+  // Contention needs the host's other events, which the bundle does not carry.
+  const { data: allEvents } = useAsync((api) => api.listEvents(), [])
+  const clashes = clashedEvents(dateClashes(event, allEvents ?? []))
+
+  const venue = venueParty(parties, orgs)
+  const checks = permitChecks(event, venue?.org ?? null)
 
   const leading = event.dateOptions
     .map((option) => ({
@@ -78,6 +91,15 @@ export default function OverviewTab() {
                 </span>
               )}
             </p>
+          )}
+          {clashes.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-[6px]">
+              {clashes.map((clash) => (
+                <Link key={clash.eventId} to={`/app/events/${clash.eventId}`}>
+                  <Chip tone="warn">Date shared with {clash.title}</Chip>
+                </Link>
+              ))}
+            </div>
           )}
         </Card>
 
@@ -232,6 +254,35 @@ export default function OverviewTab() {
               onCommit={(v) => setLocation('notes', v)}
             />
           </KV>
+          <KV label="Capacity target">
+            <InlineText
+              ariaLabel="Capacity target"
+              value={event.capacityTarget === null ? '' : String(event.capacityTarget)}
+              placeholder="How many you are planning for"
+              onCommit={(v) => {
+                const parsed = Math.trunc(Number(v))
+                updateEvent({ capacityTarget: v.trim() && parsed > 0 ? parsed : null })
+              }}
+            />
+          </KV>
+          {venue && (
+            <>
+              <KV label="Site">
+                <Link className="text-vio" to={`/app/partners/${venue.org.id}`}>
+                  {venue.org.name}
+                </Link>
+              </KV>
+              {checks.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-[6px]">
+                  {checks.map((check) => (
+                    <Chip key={check} tone="warn">
+                      {check}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </Card>
 
         <Card>
@@ -252,6 +303,8 @@ export default function OverviewTab() {
             </>
           )}
         </Card>
+
+        <TalkTracks />
 
         <Card>
           <Eyebrow className="mb-[5px]">Template</Eyebrow>
@@ -281,6 +334,83 @@ export default function OverviewTab() {
         />
       )}
     </div>
+  )
+}
+
+/**
+ * M1 talk tracks. Short prompts for the day, in the host's own words. Stored
+ * as plain strings rather than objects: there is nothing else to know about a
+ * line you are going to say out loud.
+ */
+function TalkTracks() {
+  const { bundle, run } = useEvent()
+  const [draft, setDraft] = useState('')
+
+  const eventId = bundle.event.id
+  const tracks = bundle.event.talkTracks ?? []
+
+  const write = (next: string[]) => run((api) => api.updateEvent(eventId, { talkTracks: next }))
+
+  const add = () => {
+    const text = draft.trim()
+    if (!text) return
+    write([...tracks, text])
+    setDraft('')
+  }
+
+  return (
+    <Card>
+      <Eyebrow className="mb-[5px]">Talk tracks</Eyebrow>
+
+      {tracks.map((text, index) => (
+        // Keyed by position and text together: a plain index would let a
+        // removed line leave its words behind in the input below it.
+        <div key={`${index}-${text}`} className="flex items-start gap-1 py-[3px]">
+          <span
+            aria-hidden="true"
+            className="mt-[13px] size-[4px] shrink-0 rounded-full bg-faint"
+          />
+          <InlineText
+            multiline
+            ariaLabel="Talk track"
+            value={text}
+            onCommit={(next) =>
+              write(
+                next
+                  ? tracks.map((t, i) => (i === index ? next : t))
+                  : tracks.filter((_, i) => i !== index),
+              )
+            }
+            className="flex-1"
+          />
+          <button
+            type="button"
+            aria-label="Remove talk track"
+            onClick={() => write(tracks.filter((_, i) => i !== index))}
+            className="mt-[6px] shrink-0 text-mut transition hover:text-rosek"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ))}
+
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="Something worth saying twice"
+          aria-label="New talk track"
+          className="!w-auto min-w-[180px] flex-1 !py-1 !text-xs"
+        />
+        <QuietButton onClick={add}>
+          <Plus size={11} />
+          Add
+        </QuietButton>
+      </div>
+
+      <Sub className="mt-2">Prompts for the day. Quotes you capture land on contacts.</Sub>
+    </Card>
   )
 }
 

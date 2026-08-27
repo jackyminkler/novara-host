@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, Check, Plus, RotateCw } from 'lucide-react'
+import { Copy, Check, Plus, RotateCw, X } from 'lucide-react'
 import {
   Avatar, Button, Card, Chip, Divider, Eyebrow, GhostButton, KV, OutlineButton, QuietButton, cx,
 } from '../../ui/primitives'
@@ -8,14 +8,37 @@ import { Field, Input, Label, Select } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
 import { useAsync } from '../useApi'
 import { useEvent } from './EventContext'
+import { DueChip } from './InlineEditors'
 import { ORG_TYPES, initials, orgTypeChip, profileFields } from '../../data/profiles'
-import type { CustomField, Org, OrgType, Party, PartyStatus } from '../../data/types'
+import type { CustomField, Deliverable, Org, OrgType, Party, PartyStatus } from '../../data/types'
 import { InlineText } from '../../ui/form'
 import { track } from '../../lib/analytics'
 
 // One card per party: role, status, terms, goal and call to action, the guest
-// link, the nudge counter, and their date summary. The goal line is what the
-// recap later echoes.
+// link, the nudge counter, their date summary, and the deliverables both ways.
+// The goal line is what the recap later echoes.
+//
+// M1 effort ledger: deliverables carry a direction, so an arrangement where
+// one side quietly does everything shows up as a count rather than as a
+// feeling. The summary line reads without opening anything.
+
+let deliverableSeq = 0
+const nextDeliverableId = () => `dlv-${Date.now().toString(36)}-${(deliverableSeq += 1)}`
+
+const DIRECTIONS: { direction: Deliverable['direction']; title: string; from: string }[] = [
+  { direction: 'party', title: 'They deliver', from: 'from them' },
+  { direction: 'host', title: 'You deliver', from: 'from you' },
+]
+
+/** "2 of 3 from them, 1 of 2 from you". Null when nothing is agreed yet. */
+function ledgerSummary(deliverables: Deliverable[]): string | null {
+  const parts = DIRECTIONS.map(({ direction, from }) => {
+    const side = deliverables.filter((d) => d.direction === direction)
+    if (side.length === 0) return null
+    return `${side.filter((d) => d.done).length} of ${side.length} ${from}`
+  }).filter(Boolean)
+  return parts.length > 0 ? parts.join(', ') : null
+}
 
 const STATUS: Record<PartyStatus, { label: string; tone: ChipTone }> = {
   invited: { label: 'Invited', tone: 'gray' },
@@ -70,11 +93,14 @@ export default function PartiesTab() {
 function PartyCard({ party }: { party: Party }) {
   const { bundle, run } = useEvent()
   const [copied, setCopied] = useState(false)
+  const [openLedger, setOpenLedger] = useState(false)
   const org = bundle.orgs.find((o) => o.id === party.orgId)
   const name = org?.name ?? 'Removed partner'
   const contact = org?.contacts[0]
   const status = STATUS[party.status]
   const eventId = bundle.event.id
+  const confirmed = bundle.event.dateOptions.find((o) => o.id === bundle.event.confirmedDateOptionId)
+  const eventDate = confirmed ? new Date(confirmed.startsAt) : null
 
   const guestUrl = party.tokenId ? `${window.location.origin}/g/${party.tokenId}` : null
 
@@ -101,6 +127,9 @@ function PartyCard({ party }: { party: Party }) {
 
   const answered = Object.keys(party.dateResponses).length
   const yes = Object.values(party.dateResponses).filter((r) => r.value === 'yes').length
+
+  const deliverables = party.deliverables ?? []
+  const summary = ledgerSummary(deliverables)
 
   return (
     <Card>
@@ -168,6 +197,38 @@ function PartyCard({ party }: { party: Party }) {
         </KV>
       )}
 
+      {summary && (
+        <KV label="Deliverables" labelWidth="min-w-[86px]">
+          <span className="text-sec">{summary}</span>
+        </KV>
+      )}
+
+      <div className="mt-1">
+        <QuietButton onClick={() => setOpenLedger((v) => !v)}>
+          {openLedger
+            ? 'Hide deliverables'
+            : summary
+              ? 'Open deliverables'
+              : 'Add deliverables'}
+        </QuietButton>
+      </div>
+
+      {openLedger && (
+        <div className="mt-2 grid gap-3">
+          {DIRECTIONS.map(({ direction, title }) => (
+            <DeliverableList
+              key={direction}
+              direction={direction}
+              title={title}
+              deliverables={deliverables}
+              eventId={eventId}
+              partyId={party.id}
+              eventDate={eventDate}
+            />
+          ))}
+        </div>
+      )}
+
       <Divider />
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -214,6 +275,121 @@ function PartyCard({ party }: { party: Party }) {
         </GhostButton>
       </div>
     </Card>
+  )
+}
+
+/**
+ * One side of the ledger. Both lists write the whole `deliverables` array back
+ * through updateParty, so the two directions can never fall out of step with
+ * each other the way two fields would.
+ */
+function DeliverableList({
+  direction,
+  title,
+  deliverables,
+  eventId,
+  partyId,
+  eventDate,
+}: {
+  direction: Deliverable['direction']
+  title: string
+  deliverables: Deliverable[]
+  eventId: string
+  partyId: string
+  eventDate: Date | null
+}) {
+  const { run } = useEvent()
+  const [draft, setDraft] = useState('')
+  const [due, setDue] = useState('')
+
+  const rows = deliverables.filter((d) => d.direction === direction)
+
+  const write = (next: Deliverable[]) =>
+    run((api) => api.updateParty(eventId, partyId, { deliverables: next }))
+
+  const patch = (id: string, change: Partial<Deliverable>) =>
+    write(deliverables.map((d) => (d.id === id ? { ...d, ...change } : d)))
+
+  const add = () => {
+    const text = draft.trim()
+    if (!text) return
+    write([
+      ...deliverables,
+      { id: nextDeliverableId(), direction, title: text, due: due || null, done: false },
+    ])
+    setDraft('')
+    setDue('')
+  }
+
+  const toggle = (row: Deliverable) => {
+    patch(row.id, { done: !row.done })
+    track('hp_deliverable_toggled', { eventId, direction })
+  }
+
+  return (
+    <div>
+      <Eyebrow className="mb-[5px]">{title}</Eyebrow>
+
+      {rows.map((row) => (
+        <div key={row.id} className="flex flex-wrap items-center gap-[6px] border-t border-hair py-[6px]">
+          <button
+            type="button"
+            aria-label={row.done ? 'Mark not done' : 'Mark done'}
+            onClick={() => toggle(row)}
+            className={cx(
+              'hairline flex size-[18px] shrink-0 items-center justify-center rounded-md transition',
+              row.done
+                ? 'border-transparent bg-grn text-grnk'
+                : 'border-[#dad5ec] text-transparent hover:border-viodash',
+            )}
+          >
+            <Check size={12} />
+          </button>
+          <InlineText
+            ariaLabel="Deliverable"
+            value={row.title}
+            onCommit={(next) => next && patch(row.id, { title: next })}
+            className={cx('min-w-[120px] flex-1', row.done && 'text-mut line-through')}
+          />
+          <DueChip
+            dueDate={row.due}
+            eventDate={eventDate}
+            done={row.done}
+            onChange={(next) => patch(row.id, { due: next })}
+          />
+          <button
+            type="button"
+            aria-label="Remove deliverable"
+            onClick={() => write(deliverables.filter((d) => d.id !== row.id))}
+            className="shrink-0 text-mut transition hover:text-rosek"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ))}
+
+      <div className="flex flex-wrap items-center gap-[6px] border-t border-hair pt-[6px]">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder={direction === 'party' ? 'What they owe' : 'What you owe'}
+          aria-label={`New deliverable, ${title.toLowerCase()}`}
+          className="!w-auto min-w-[140px] flex-1 !py-1 !text-xs"
+        />
+        <Input
+          type="date"
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+          aria-label="Due date, optional"
+          className="!w-auto !py-1 !text-xs"
+        />
+        <QuietButton onClick={add}>
+          <Plus size={11} />
+          Add
+        </QuietButton>
+      </div>
+    </div>
   )
 }
 

@@ -7,6 +7,7 @@ import { useAsync } from '../useApi'
 import { useEvent } from './EventContext'
 import type { DateOption, Party, ResponseValue } from '../../data/types'
 import { awayConflict, formatDayOnly, formatLong, formatTime, holidayOn } from '../../lib/dates'
+import { dateClashes } from './siteChecks'
 import { track } from '../../lib/analytics'
 
 // The hero screen. Parties by options, response chips, and a constraint note.
@@ -48,8 +49,11 @@ export default function DatesTab() {
 
   // Away blocks are the host's own calendar, so a conflict warning needs them.
   const { data: availability } = useAsync((api) => api.listAvailability(), [])
+  // The host's other events, for the same-day warning the overview also shows.
+  const { data: allEvents } = useAsync((api) => api.listEvents(), [])
 
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
+  const clashes = dateClashes(event, allEvents ?? [])
 
   const addOption = () => {
     if (!draft || event.dateOptions.length >= 5) return
@@ -148,6 +152,7 @@ export default function DatesTab() {
                   key={option.id}
                   option={option}
                   availability={availability ?? []}
+                  sharedWith={clashes.filter((c) => c.optionId === option.id).map((c) => c.title)}
                   onRemove={() => removeOption(option.id)}
                   className={index === event.dateOptions.length - 1 ? 'pr-[18px]' : undefined}
                 />
@@ -368,11 +373,14 @@ function RecordPopover({
 function OptionHead({
   option,
   availability,
+  sharedWith,
   onRemove,
   className,
 }: {
   option: DateOption
   availability: { kind: 'away' | 'open'; startDate: string; endDate: string; label: string }[]
+  /** Titles of the host's other events landing on this same day. */
+  sharedWith: string[]
   onRemove: () => void
   className?: string
 }) {
@@ -389,6 +397,11 @@ function OptionHead({
           {holiday ?? `You are ${away?.label.toLowerCase()}`}
         </Chip>
       )}
+      {sharedWith.map((title) => (
+        <Chip key={title} tone="warn" className="mt-1 !whitespace-normal !px-[6px] !text-[10px]">
+          Shared with {title}
+        </Chip>
+      ))}
       <button
         type="button"
         onClick={onRemove}

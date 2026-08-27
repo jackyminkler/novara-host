@@ -19,6 +19,14 @@ export type AnalyticsEvent =
   | 'hp_template_edited'
   | 'hp_template_deleted'
   | 'hp_event_saved_as_template'
+  // M1 event workspace depth. Deliverables and the shot list answer whether an
+  // agreement written down gets worked; spend and ROI answer whether the recap
+  // is worth the ten minutes it asks for.
+  | 'hp_deliverable_toggled'
+  | 'hp_spend_entry_added'
+  | 'hp_roi_viewed'
+  | 'hp_shot_toggled'
+  | 'hp_site_lesson_added'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

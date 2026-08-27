@@ -377,7 +377,10 @@ export function buildStore(): MockStore {
   const marina: EventDoc = {
     id: 'marina-track-social',
     ownerUid: HOST,
-    sourceKey: null,
+    // The wrapped event carries the slug its guest list was imported under, so
+    // the recap can report where those people came from. Events created in the
+    // workspace have none until a list is imported against them.
+    sourceKey: '2026-06-20-marina-track',
     title: 'Marina track social',
     status: 'wrapped',
     description:
@@ -535,6 +538,33 @@ export function buildStore(): MockStore {
           { id: 'd-golden-2', direction: 'host', title: 'Two tables and the generator, in place by 6:25', due: '2026-08-27', done: false },
         ],
         order: 4,
+      },
+      // The site is a party like any other. It is what carries the permit
+      // thresholds and the lessons into the workspace, and it has no guest
+      // link: the site office answers email, not a link.
+      {
+        id: 'p-lawn',
+        orgId: 'main-post-lawn',
+        roleOnEvent: 'venue',
+        status: 'confirmed',
+        terms: { gives: 'The lawn and the paved edge from 6 to 9', gets: 'Named on the page, trash carried out' },
+        goal: 'A clean site and no complaints',
+        cta: '',
+        dateResponses: { 'opt-a': answered('yes', 'host'), 'opt-b': answered('yes', 'host') },
+        constraintNote: 'Sound rules after 9. Permit paperwork takes two weeks.',
+        tokenId: null,
+        nudgeCount: 0,
+        profile: {
+          capacity: 'Comfortable to about 150 on the lawn',
+          permits: 'Two weeks lead time, sound rules after 9',
+        },
+        customFields: [],
+        outcomes: [],
+        deliverables: [
+          { id: 'd-lawn-1', direction: 'party', title: 'Permit confirmation in writing', due: '2026-08-13', done: false },
+          { id: 'd-lawn-2', direction: 'host', title: 'Site plan and headcount to the site office', due: '2026-08-10', done: true },
+        ],
+        order: 5,
       },
     ],
     'marina-track-social': [
@@ -766,8 +796,10 @@ export function buildStore(): MockStore {
   ]
 
   const tokens: GuestToken[] = [
+    // A party without a link has no token document. The venue is one: the site
+    // office answers email, not a link.
     ...Object.entries(parties).flatMap(([eventId, list]) =>
-      list.map((p) => ({
+      list.filter((p) => p.tokenId).map((p) => ({
         id: p.tokenId as string,
         ownerUid: HOST,
         eventId,

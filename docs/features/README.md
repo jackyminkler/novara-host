@@ -10,6 +10,9 @@ runners. Write the "What it does" section for them.
 
 - [`templates.md`](templates.md) — the host's own plans: the library, the editor, save as
   template, and the matching configuration a template declares.
+- [`recap-and-roi.md`](recap-and-roi.md) — what an event cost and what it returned:
+  deliverables both directions, the spend log, show rate by source, per party outcomes, and
+  the site lessons loop with its permit and date warnings.
 
 ## Owed
 
