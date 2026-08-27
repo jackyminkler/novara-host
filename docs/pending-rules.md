@@ -11,6 +11,33 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
+### How to apply these four blocks
+
+Enough that this file can be handed over on its own.
+
+**Where they go.** In the consumer repo, `firebase/firestore.rules`, immediately after the
+`hp_feedback` block and before the closing braces, at the same nesting as every other `hp_` block.
+They call `hpOwns()` and `hpOwnsNew()`, which are defined just above them in that same scope, so
+pasting them anywhere else silently breaks the reference.
+
+**`hp_availabilitySettings` is not `hp_availability`.** That file already has an `hp_availability`
+block, which is the day-level away and open bands from F10. The new one is a different collection
+with an unhelpfully similar name, and it is the most likely thing for someone to "correct" into a
+duplicate or skip as already covered. Both need to exist.
+
+**Nothing else in the file changes.** No helper edits, no changes to existing blocks, no index
+file changes, no Storage changes.
+
+**Verified 2026-08-26: `main` is safe to deploy from.** The stranding recorded under Applied below
+is resolved. The consumer repo's `main` now carries the open-signup form of `hpIsHost()` (read the
+function body, not a grep, per the trap recorded below), plus the `hp_feedback` and `hp_people`
+blocks. So unlike on 2026-08-25, deploying rules from `main` no longer reverts open signup.
+
+**Then do the two things that went wrong twice before.** Read the deployed ruleset back from the
+Firebase Rules API to confirm the blocks are live, rather than trusting the checkout. And merge
+whatever branch you deployed from into `main` the same day: both previous incidents were a deploy
+treated as final while the merge was treated as tidying.
+
 ### Personal availability: `hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`
 
 Written 2026-08-26 for F14 to F19. Three new top-level collections. Nothing in the app can reach
