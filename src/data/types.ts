@@ -363,12 +363,15 @@ export interface FriendLink {
 }
 
 /**
- * A group finding a time together, live.
+ * A group finding a time together, live. Called a plan everywhere a person
+ * can read it; the code word stayed `Huddle` from the first build.
  *
- * Unlike every other guest link, one huddle link goes to everyone: that is the
+ * Unlike every other guest link, one plan link goes to everyone: that is the
  * point, "drop your calendar into this and let's see". It is safe to share
  * because it expires, and because the only thing anyone contributes is free
  * time with no titles attached.
+ *
+ * See docs/features/plans.md before changing anything here.
  */
 export interface Huddle {
   id: string
@@ -376,14 +379,51 @@ export interface Huddle {
   title: string
   durationMinutes: number
   horizonDays: number
-  /** Weekdays worth considering, 0 = Sunday. Empty means any day. */
-  weekdays: number[]
+  /**
+   * Which hours are worth considering, by weekday, index 0 = Sunday. Always
+   * seven. "After work or weekends" is different hours on different days,
+   * which a list of weekdays could never say. Documents written before F20
+   * carry `weekdays: number[]` instead and are migrated on read.
+   */
+  hours: DayHoursDoc[]
+  /**
+   * Those hours as absolute stretches, derived in the organizer's browser at
+   * create and edit time. Wall clock needs a zone to become absolute, so it
+   * is turned into milliseconds once, where the plan was written, and every
+   * guest afterwards reads numbers and converts nothing. Null on a document
+   * written before F20, which means unbounded rather than empty.
+   */
+  allowed: { s: number; e: number }[] | null
+  /** 'YYYY-MM-DD', when answers close. Null means no cutoff. For editing and display. */
+  respondBy: string | null
+  /** 'YYYY-MM-DD', when the thing has to have happened by. Null means open ended. */
+  happenBy: string | null
+  /**
+   * The same two dates as end-of-day epoch milliseconds, computed in the
+   * organizer's browser. These are the enforcement values: the guest
+   * functions compare these numbers against now and never parse the date
+   * strings, which have no zone in them to parse against.
+   */
+  respondByMs: number | null
+  happenByMs: number | null
   tokenId: string
   participants: HuddleParticipant[]
   /** Slot start in epoch milliseconds, as a string key, to the ids that voted. */
   votes: Record<string, string[]>
   /** Set once the group picks, which is what an event gets created from. */
   settledStartsAt: string | null
+  /** The end of the picked time. Set with settledStartsAt, null until then. */
+  settledEndsAt: string | null
+  /** Where, once there is a where. Free text, added with the pick. */
+  location: string
+  /** Anything else the group needs to know. Free text, added with the pick. */
+  notes: string
+  /** The Google Calendar event the pick created, so a later edit updates it. */
+  googleEventId: string | null
+  /** Shown to guests as the person who is organizing. */
+  hostDisplayName: string
+  /** The organizer's IANA zone. Reference only: everything stored is absolute. */
+  timeZone: string
   createdAt: string
   expiresAt: string | null
 }
@@ -393,6 +433,14 @@ export interface HuddleParticipant {
   name: string
   /** Their free time, derived in their own browser. Never their events. */
   free: { s: number; e: number }[]
+  /**
+   * Optional, and only ever for the calendar invite. Empty when they did not
+   * give one. Never shown to the other guests: the view sends a participant
+   * their own address back and nobody else's.
+   */
+  email: string
+  /** How they said it: a calendar read, or days picked by hand. */
+  source: 'calendar' | 'manual'
   joinedAt: string
 }
 

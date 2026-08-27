@@ -65,7 +65,46 @@ export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'captured
 export type FriendLinkInput = Pick<FriendLink, 'name' | 'horizonDays' | 'kinds'>
 export type HuddleInput = Pick<
   Huddle,
-  'title' | 'durationMinutes' | 'horizonDays' | 'weekdays' | 'expiresAt'
+  | 'title'
+  | 'durationMinutes'
+  | 'horizonDays'
+  | 'hours'
+  | 'allowed'
+  | 'respondBy'
+  | 'respondByMs'
+  | 'happenBy'
+  | 'happenByMs'
+  | 'expiresAt'
+  | 'hostDisplayName'
+  | 'timeZone'
+>
+/**
+ * The editable slice of a plan.
+ *
+ * Two absences are deliberate. `expiresAt` is missing because expiry moves in
+ * two places or not at all: `extendHuddle` writes the huddle and its token
+ * together, and a patch that touched only one would leave a live page behind a
+ * dead link. `participants` and `votes` are missing because they belong to the
+ * guest endpoints, which bound every field a guest can set; letting the host
+ * app write them here would put a second, unbounded door on the same data.
+ */
+export type HuddlePatch = Partial<
+  Pick<
+    Huddle,
+    | 'title'
+    | 'durationMinutes'
+    | 'hours'
+    | 'allowed'
+    | 'respondBy'
+    | 'respondByMs'
+    | 'happenBy'
+    | 'happenByMs'
+    | 'settledStartsAt'
+    | 'settledEndsAt'
+    | 'location'
+    | 'notes'
+    | 'googleEventId'
+  >
 >
 /** The writable slice of the availability document. Busy intervals are derived, never typed. */
 export type AvailabilitySettingsPatch = Partial<
@@ -179,9 +218,11 @@ export interface HostApi {
   listBookings(): Promise<Booking[]>
   cancelBooking(id: string): Promise<void>
 
-  // A group finding a time together. One link for everyone, and it expires.
+  // F20, plans. A group finding a time together. One link for everyone, and
+  // it expires. Called a plan in every string a person reads.
   listHuddles(): Promise<Huddle[]>
   createHuddle(input: HuddleInput, uid: string): Promise<{ id: string; token: string }>
+  updateHuddle(id: string, patch: HuddlePatch): Promise<void>
   /** Pushes the expiry out again without changing the link. */
   extendHuddle(id: string, expiresAt: string): Promise<void>
   deleteHuddle(id: string): Promise<void>

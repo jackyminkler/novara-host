@@ -575,6 +575,10 @@ export const mockApi: HostApi = {
       participants: [],
       votes: {},
       settledStartsAt: null,
+      settledEndsAt: null,
+      location: '',
+      notes: '',
+      googleEventId: null,
       createdAt: new Date().toISOString(),
     }
     store.huddles.push(huddle)
@@ -591,6 +595,15 @@ export const mockApi: HostApi = {
     })
     persist()
     return ok({ id: huddle.id, token: fresh })
+  },
+
+  updateHuddle: (huddleId, patch) => {
+    const huddle = store.huddles.find((h) => h.id === huddleId)
+    // Only the keys the patch actually carries, so a caller editing the title
+    // cannot blank the pick by omission.
+    if (huddle) Object.assign(huddle, patch)
+    persist()
+    return ok(undefined)
   },
 
   extendHuddle: (huddleId, expiresAt) => {

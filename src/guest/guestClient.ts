@@ -6,7 +6,7 @@ import { dataMode } from '../data/api'
 // Hosting rewrites keep these same-origin, so there is no CORS setup.
 
 export class GuestError extends Error {
-  constructor(public reason: 'invalid' | 'network') {
+  constructor(public reason: 'invalid' | 'network' | 'closed') {
     super(reason)
   }
 }
@@ -18,7 +18,14 @@ async function callFunction(path: string, init?: RequestInit): Promise<GuestPayl
   } catch {
     throw new GuestError('network')
   }
-  if (response.status === 404 || response.status === 403) throw new GuestError('invalid')
+  if (response.status === 403) {
+    // A plan that has settled or run past a deadline is refused with a reason,
+    // and it is a different thing from a link that was never any good: the
+    // page has something true to say about it rather than a dead end.
+    const body = await response.json().catch(() => null)
+    throw new GuestError((body as { error?: string } | null)?.error === 'closed' ? 'closed' : 'invalid')
+  }
+  if (response.status === 404) throw new GuestError('invalid')
   if (!response.ok) throw new GuestError('network')
   return (await response.json()) as GuestPayload
 }

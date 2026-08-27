@@ -42,12 +42,16 @@ export default function HuddlePage({
       free: p.free.map((w) => ({ start: w.s, end: w.e })),
     }))
     if (participants.length === 0) return []
+    // The organizer's hours, already absolute. Null means they set none, which
+    // is unbounded rather than empty. The deadline and now bounds land here in
+    // Phase D, through clipWindows.
+    const within = view.allowed?.map((w) => ({ start: w.s, end: w.e }))
     return suggest(participants, {
       durationMinutes: view.durationMinutes,
       limit: 6,
-      weekdays: view.weekdays,
+      within,
     })
-  }, [view.participants, view.durationMinutes, view.weekdays])
+  }, [view.participants, view.durationMinutes, view.allowed])
 
   const nameOf = (id: string) => view.participants.find((p) => p.id === id)?.name ?? 'Someone'
 

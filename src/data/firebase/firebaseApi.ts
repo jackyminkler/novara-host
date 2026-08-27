@@ -51,6 +51,7 @@ import type {
 } from '../types'
 import { materializeTasks, runItemsFromTemplate, tasksFromTemplate } from '../instantiate'
 import { normalizeAvailability } from '../availabilitySettings'
+import { hoursFromWeekdays } from '../../lib/availability'
 
 // Every top-level collection is hp_ prefixed and carries its own explicit
 // rules match block. Subcollections hang off hp_events and are never reached
@@ -123,6 +124,51 @@ function makeToken(): string {
 
 function nextOrder(items: { order: number }[]): number {
   return items.reduce((max, item) => Math.max(max, item.order + 1), 0)
+}
+
+/**
+ * One place where a stored plan becomes the shape the app expects.
+ *
+ * F20 added hours, allowed windows, both deadlines, the pick details, and
+ * per-participant email and provenance. A document written before that carries
+ * `weekdays` and none of the rest, so every one of them is filled in here
+ * rather than guarded at each read: `hours` derives from the old weekday list,
+ * `allowed` stays null which reads as unbounded, and the missing strings and
+ * numbers take their empty values. Rules were never deployed before F20, so
+ * nothing in production predates this; it is for emulator and mock continuity.
+ * The guest functions run the same migration on their own copy.
+ */
+function huddleFromDoc(raw: Record<string, unknown>): Huddle {
+  const stored = raw as Partial<Huddle> & { id: string; weekdays?: number[] }
+  return {
+    id: stored.id,
+    ownerUid: stored.ownerUid ?? '',
+    title: stored.title ?? '',
+    durationMinutes: stored.durationMinutes ?? 60,
+    horizonDays: stored.horizonDays ?? 30,
+    hours: stored.hours ?? hoursFromWeekdays(stored.weekdays ?? []),
+    allowed: stored.allowed ?? null,
+    respondBy: stored.respondBy ?? null,
+    respondByMs: stored.respondByMs ?? null,
+    happenBy: stored.happenBy ?? null,
+    happenByMs: stored.happenByMs ?? null,
+    tokenId: stored.tokenId ?? '',
+    participants: (stored.participants ?? []).map((p) => ({
+      ...p,
+      email: p.email ?? '',
+      source: p.source ?? 'calendar',
+    })),
+    votes: stored.votes ?? {},
+    settledStartsAt: stored.settledStartsAt ?? null,
+    settledEndsAt: stored.settledEndsAt ?? null,
+    location: stored.location ?? '',
+    notes: stored.notes ?? '',
+    googleEventId: stored.googleEventId ?? null,
+    hostDisplayName: stored.hostDisplayName ?? '',
+    timeZone: stored.timeZone ?? '',
+    createdAt: stored.createdAt ?? '',
+    expiresAt: stored.expiresAt ?? null,
+  }
 }
 
 export const firebaseApi: HostApi = {
@@ -560,7 +606,8 @@ export const firebaseApi: HostApi = {
   },
 
   async listHuddles() {
-    return readOwned<Huddle>(HUDDLES)
+    const rows = await readOwned<Record<string, unknown>>(HUDDLES)
+    return rows.map(huddleFromDoc)
   },
 
   async createHuddle(input: HuddleInput, uid: string) {
@@ -574,6 +621,10 @@ export const firebaseApi: HostApi = {
       participants: [],
       votes: {},
       settledStartsAt: null,
+      settledEndsAt: null,
+      location: '',
+      notes: '',
+      googleEventId: null,
       createdAt: now(),
     })
     batch.set(doc(db, TOKENS, tokenId), {
@@ -588,6 +639,12 @@ export const firebaseApi: HostApi = {
     })
     await batch.commit()
     return { id: ref.id, token: tokenId }
+  },
+
+  async updateHuddle(huddleId, patch) {
+    // Exactly the keys the caller passed. HuddlePatch leaves out expiresAt,
+    // participants, and votes on purpose: see the comment on it in api.ts.
+    await updateDoc(doc(db, HUDDLES, huddleId), patch)
   },
 
   async extendHuddle(huddleId, expiresAt) {

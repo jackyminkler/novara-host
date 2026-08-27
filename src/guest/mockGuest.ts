@@ -1,7 +1,7 @@
 import { mockStore, mockPersist } from '../data/mock/mockApi'
 import { GuestError } from './guestClient'
 import type { BookingView, GuestAction, GuestPayload, GuestView, HuddleView } from './guestTypes'
-import { fitsInWindow, windowsForFriend } from '../lib/availability'
+import { fitsInWindow, planPhase, windowsForFriend } from '../lib/availability'
 import type { Booking } from '../data/types'
 import { orgTypeLabel, ownerLabel } from '../data/profiles'
 import type { OwnerRef } from '../data/types'
@@ -50,7 +50,13 @@ function buildBooking(token: string): BookingView {
   }
 }
 
-/** A huddle: one link, everyone on it, and nothing kept past its expiry. */
+/**
+ * A plan: one link, everyone on it, and nothing kept past its expiry.
+ *
+ * The defaults here are the same migration functions/src/index.ts and
+ * firebaseApi run, so a document written before F20 reads the same in all
+ * three. Twins in three build roots, moved together.
+ */
 function buildHuddle(token: string, youId: string | null): HuddleView {
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
@@ -58,20 +64,35 @@ function buildHuddle(token: string, youId: string | null): HuddleView {
   const huddle = store.huddles.find((h) => h.id === record.subjectId)
   if (!huddle) throw new GuestError('invalid')
 
+  const mine = youId ? huddle.participants.find((p) => p.id === youId) : null
+
   return {
     scope: 'huddle',
     huddleId: huddle.id,
     title: huddle.title,
     durationMinutes: huddle.durationMinutes,
     horizonDays: huddle.horizonDays,
-    weekdays: huddle.weekdays,
-    // Everyone's free time goes to everyone, which is the deal a huddle makes:
-    // you can see when the others are free, never what they are doing.
+    // The hours themselves stay host-side. Guests read the absolute windows
+    // those hours already became.
+    allowed: huddle.allowed ?? null,
+    respondBy: huddle.respondBy ?? null,
+    respondByMs: huddle.respondByMs ?? null,
+    happenBy: huddle.happenBy ?? null,
+    happenByMs: huddle.happenByMs ?? null,
+    // Everyone's free time goes to everyone, which is the deal a plan makes:
+    // you can see when the others are free, never what they are doing. Emails
+    // are the exception, and only the caller's own comes back.
     participants: huddle.participants.map((p) => ({ id: p.id, name: p.name, free: p.free })),
     votes: huddle.votes,
     settledStartsAt: huddle.settledStartsAt,
+    settledEndsAt: huddle.settledEndsAt ?? null,
+    location: huddle.location ?? '',
+    notes: huddle.notes ?? '',
+    hostName: huddle.hostDisplayName || 'the organizer',
+    inviteSent: Boolean(huddle.googleEventId),
     expiresAt: huddle.expiresAt,
     you: youId,
+    yourEmail: mine ? mine.email || null : null,
   }
 }
 
@@ -279,15 +300,30 @@ function huddleSubmit(
   const huddle = store.huddles.find((h) => h.id === record.subjectId)
   if (!huddle) throw new GuestError('invalid')
 
+  // Before anything else, exactly as the function does it: a plan that has
+  // settled, lapsed, or closed to answers takes no more of them, and refusing
+  // here means nothing is half written on the way to finding that out.
+  if (planPhase(huddle, Date.now()) !== 'open') throw new GuestError('closed')
+
   let you = typeof payload.you === 'string' ? payload.you : null
 
   if (action === 'join_huddle') {
     const name = String(payload.name ?? '').slice(0, 80).trim()
+    // Finite rather than merely numeric, and capped, for the same reasons the
+    // function gives: NaN is a number, and an unchecked list is a way to write
+    // a megabyte into someone else's document.
     const free = Array.isArray(payload.free)
-      ? (payload.free as { s: number; e: number }[]).filter(
-          (w) => typeof w?.s === 'number' && typeof w?.e === 'number' && w.e > w.s,
-        )
+      ? (payload.free as { s: number; e: number }[])
+          .filter((w) => Number.isFinite(w?.s) && Number.isFinite(w?.e) && w.e > w.s)
+          .slice(0, 500)
       : []
+    // Optional, and only ever for the calendar invite. An absent key on a
+    // rejoin keeps what they left last time; a present one sets it, and an
+    // empty or malformed one clears it.
+    const emailGiven = 'email' in payload
+    const typed = String(payload.email ?? '').slice(0, 120).trim()
+    const email = /^\S+@\S+\.\S+$/.test(typed) ? typed : ''
+    const source = payload.source === 'manual' ? 'manual' : 'calendar'
     if (name) {
       const existing = you ? huddle.participants.find((p) => p.id === you) : null
       if (existing) {
@@ -295,9 +331,19 @@ function huddleSubmit(
         // calendar after moving a meeting should update, not appear twice.
         existing.name = name
         existing.free = free
+        existing.source = source
+        if (emailGiven) existing.email = email
+        else existing.email = existing.email ?? ''
       } else {
         you = `hp-${Date.now().toString(36)}${huddle.participants.length}`
-        huddle.participants.push({ id: you, name, free, joinedAt: new Date().toISOString() })
+        huddle.participants.push({
+          id: you,
+          name,
+          free,
+          email,
+          source,
+          joinedAt: new Date().toISOString(),
+        })
       }
     }
   }
