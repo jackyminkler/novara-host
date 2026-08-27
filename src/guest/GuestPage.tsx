@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Check, X } from 'lucide-react'
 import { fetchGuestView, submitGuestAction, GuestError } from './guestClient'
-import type { GuestView } from './guestTypes'
+import type { BookingView, GuestView } from './guestTypes'
+import { isBookingView } from './guestTypes'
+import BookingPage from './BookingPage'
 import { Card, Chip, Eyebrow, SubTitle, cx } from '../ui/primitives'
 import { formatClock, formatLong, formatShort } from '../lib/dates'
 import { track } from '../lib/analytics'
@@ -14,6 +16,9 @@ import { track } from '../lib/analytics'
 export default function GuestPage() {
   const { token = '' } = useParams()
   const [view, setView] = useState<GuestView | null>(null)
+  // A booking link is a different product on the same token mechanism, so it
+  // gets its own page rather than another branch inside this one.
+  const [booking, setBooking] = useState<BookingView | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'invalid' | 'error'>('loading')
 
   useEffect(() => {
@@ -21,9 +26,16 @@ export default function GuestPage() {
     fetchGuestView(token)
       .then((next) => {
         if (cancelled) return
-        setView(next)
+        if (isBookingView(next)) {
+          setBooking(next)
+        } else {
+          setView(next)
+        }
         setState('ready')
-        track('hp_guest_view_opened', { role: next.subject.roleLabel, scope: next.scope })
+        track('hp_guest_view_opened', {
+          role: isBookingView(next) ? 'friend' : next.subject.roleLabel,
+          scope: next.scope,
+        })
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -54,6 +66,10 @@ export default function GuestPage() {
         </div>
       </Shell>
     )
+  }
+
+  if (booking) {
+    return <BookingPage token={token} initial={booking} Shell={Shell} />
   }
 
   if (state === 'error' || !view) {
@@ -118,7 +134,9 @@ function PartyView({
     async (action: Parameters<typeof submitGuestAction>[1], payload: Record<string, unknown>) => {
       setSaving(true)
       try {
-        onUpdate(await submitGuestAction(token, action, payload))
+        const next = await submitGuestAction(token, action, payload)
+        // Event-scoped pages only ever get event-scoped payloads back.
+        if (!isBookingView(next)) onUpdate(next)
         setSaved(true)
         setTimeout(() => setSaved(false), 2500)
       } finally {

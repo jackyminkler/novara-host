@@ -11,7 +11,49 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-Nothing pending.
+### Personal availability: `hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`
+
+Written 2026-08-26 for F14 to F19. Three new top-level collections. Nothing in the app can reach
+them in `firebase` data mode until these blocks are applied, so this is the gate on taking the
+feature off mock.
+
+`hp_availabilitySettings` is keyed by uid, one document per host, so the owner check is on the
+document id rather than a field. That is deliberate: it makes the settings unlistable and needs
+no index.
+
+```
+match /hp_availabilitySettings/{uid} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
+
+match /hp_friendLinks/{linkId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+
+match /hp_bookings/{bookingId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+```
+
+**Guests are not in these rules on purpose.** A friend holding a booking link never touches
+Firestore. `hpGuestView` and `hpGuestSubmit` read and write these three collections with the
+Admin SDK, which bypasses rules by design, and scope every access by hand to the one friend
+link the token names. The rules above only have to answer "may this signed-in host reach her own
+rows", same as every other `hp_` collection.
+
+**No composite index needed.** The one non-trivial query is in the guest function:
+`hp_bookings` where `ownerUid ==` and `status ==`. Two equality filters are served by the
+single-field indexes Firestore builds automatically. If an `orderBy` is ever added to that
+query, it becomes a composite index and belongs back in this file before the query ships.
+
+**One schema change to an existing collection, no rules change.** `hp_guestTokens` documents
+now carry `eventId: null` for the `booking` scope, where every other scope carries an event id.
+Nothing in the current ruleset reads `eventId`, so no block changes. Worth knowing because it is
+the first guest token that is not scoped to an event.
 
 ## Applied
 

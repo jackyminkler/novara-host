@@ -3,7 +3,12 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import {
   GUEST_ACTIONS,
+  type BookingKindTemplate,
+  type BookingSlot,
+  type BookingView,
+  type BookingWindow,
   type GuestAction,
+  type GuestPayload,
   type GuestRunItem,
   type GuestView,
 } from "./guestTypes";
@@ -21,12 +26,19 @@ const db = getFirestore();
 
 const TOKENS = "hp_guestTokens";
 const EVENTS = "hp_events";
+const AVAILABILITY_SETTINGS = "hp_availabilitySettings";
+const FRIEND_LINKS = "hp_friendLinks";
+const BOOKINGS = "hp_bookings";
 
 interface TokenDoc {
-  eventId: string;
-  scope: "party" | "crew" | "recap";
+  /** Null for booking tokens, which belong to a host rather than an event. */
+  eventId: string | null;
+  scope: "party" | "crew" | "recap" | "booking";
   subjectId: string;
   revoked: boolean;
+  ownerUid: string;
+  /** Null means never. A lapsed link is refused exactly like a revoked one. */
+  expiresAt: string | null;
 }
 
 /** Anything the caller should not be able to tell apart. */
@@ -40,6 +52,9 @@ async function loadToken(raw: unknown): Promise<{ id: string; data: TokenDoc }> 
   if (!snap.exists) throw new InvalidToken();
   const data = snap.data() as TokenDoc;
   if (data.revoked) throw new InvalidToken();
+  // Expiry and revocation are the same answer to the caller on purpose: a link
+  // that says "this expired" tells a stranger the link was once real.
+  if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) throw new InvalidToken();
   return { id: raw, data };
 }
 
@@ -58,6 +73,9 @@ async function readSub(eventId: string, name: string) {
 
 async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestView> {
   const { eventId, scope, subjectId } = token.data;
+  // Booking tokens carry no event and are served by buildBookingView. Reaching
+  // here with one means the caller routed wrong, so refuse rather than guess.
+  if (!eventId || scope === "booking") throw new InvalidToken();
 
   const eventSnap = await db.collection(EVENTS).doc(eventId).get();
   if (!eventSnap.exists) throw new InvalidToken();
@@ -187,6 +205,141 @@ function touch(tokenId: string): Promise<unknown> {
   return db.collection(TOKENS).doc(tokenId).update({ lastUsedAt: new Date().toISOString() });
 }
 
+/**
+ * F18. The host derives her openings in the browser and publishes only those,
+ * so this is a filter rather than a second copy of the derivation rules. It
+ * never reads a calendar, because none was ever stored.
+ */
+async function buildBookingView(token: { id: string; data: TokenDoc }): Promise<BookingView> {
+  const { subjectId, ownerUid } = token.data;
+  const [linkSnap, settingsSnap] = await Promise.all([
+    db.collection(FRIEND_LINKS).doc(subjectId).get(),
+    db.collection(AVAILABILITY_SETTINGS).doc(ownerUid).get(),
+  ]);
+  if (!linkSnap.exists || !settingsSnap.exists) throw new InvalidToken();
+
+  const link = linkSnap.data() as { name: string; horizonDays: number; ownerUid: string };
+  // A token whose link belongs to someone else is a broken invariant, not a
+  // recoverable state. Refuse rather than serve one host's times under
+  // another's token.
+  if (link.ownerUid !== ownerUid) throw new InvalidToken();
+
+  const settings = settingsSnap.data() ?? {};
+  const published = ((settings.windows ?? []) as { s: number; e: number }[]);
+  const kinds = ((settings.kinds ?? []) as BookingKindTemplate[]);
+
+  const bookedSnap = await db
+    .collection(BOOKINGS)
+    .where("ownerUid", "==", ownerUid)
+    .where("status", "==", "booked")
+    .get();
+  const booked = bookedSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+  const taken = booked
+    .map((b) => ({
+      start: new Date(b.startsAt).getTime(),
+      end: new Date(b.endsAt).getTime(),
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  const from = Date.now();
+  const to = from + link.horizonDays * 86400000;
+  // Bookings are cut out here rather than at publish time, because they change
+  // far more often than the calendar does and one friend's choice should not
+  // rewrite the document every other friend reads.
+  const windows: BookingWindow[] = [];
+  const MIN_MS = 15 * 60000;
+  for (const w of published) {
+    const start = Math.max(w.s, from);
+    const end = Math.min(w.e, to);
+    if (end <= start) continue;
+    let cursor = start;
+    for (const t of taken) {
+      if (t.end <= cursor) continue;
+      if (t.start >= end) break;
+      if (t.start > cursor && t.start - cursor >= MIN_MS) windows.push({ s: cursor, e: Math.min(t.start, end) });
+      cursor = Math.max(cursor, t.end);
+      if (cursor >= end) break;
+    }
+    if (end - cursor >= MIN_MS) windows.push({ s: cursor, e: end });
+  }
+
+  return {
+    scope: "booking",
+    hostName: "your host",
+    friendName: link.name,
+    kinds,
+    windows,
+    mine: booked
+      .filter((b) => b.friendLinkId === subjectId)
+      .map((b) => ({
+        id: b.id,
+        kind: b.kind,
+        startsAt: b.startsAt,
+        endsAt: b.endsAt,
+        durationMinutes: b.durationMinutes ?? 60,
+      })),
+  };
+}
+
+function payloadString(payload: Record<string, unknown>, key: string, max: number): string {
+  const value = payload[key];
+  return typeof value === "string" ? value.slice(0, max) : "";
+}
+
+/** Booking writes. Kept apart from the event actions, which share no state. */
+async function handleBookingSubmit(
+  token: { id: string; data: TokenDoc },
+  action: GuestAction,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const { subjectId, ownerUid } = token.data;
+
+  if (action === "book_slot") {
+    const startsAt = payloadString(payload, "startsAt", 40);
+    const kind = payloadString(payload, "kind", 10) as BookingSlot["kind"];
+    const durationMinutes = Number(payload.durationMinutes ?? 0);
+    const start = new Date(startsAt).getTime();
+    // Bounded rather than merely positive: an unchecked duration is a way to
+    // write an event stretching to the end of time onto someone's calendar.
+    if (!Number.isFinite(start) || !Number.isFinite(durationMinutes)) return;
+    if (durationMinutes <= 0 || durationMinutes > 480) return;
+
+    // Re-derive from the published windows instead of trusting the posted
+    // time, and recompute the end rather than accepting one. This is the only
+    // place in the feature where two people can race for the same state.
+    const view = await buildBookingView(token);
+    const end = start + durationMinutes * 60000;
+    const fits = view.windows.some((w) => start >= w.s && end <= w.e);
+    if (!fits) return;
+
+    await db.collection(BOOKINGS).add({
+      ownerUid,
+      friendLinkId: subjectId,
+      friendName: payloadString(payload, "friendName", 120) || view.friendName,
+      kind,
+      startsAt: new Date(start).toISOString(),
+      endsAt: new Date(end).toISOString(),
+      durationMinutes,
+      contact: payloadString(payload, "contact", 200),
+      note: payloadString(payload, "note", 1000),
+      status: "booked",
+      createdAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (action === "cancel_booking") {
+    const bookingId = payloadString(payload, "bookingId", 80);
+    if (!bookingId) return;
+    const ref = db.collection(BOOKINGS).doc(bookingId);
+    const snap = await ref.get();
+    // Scoped by hand: a friend may only cancel what their own link booked.
+    if (snap.exists && snap.data()?.friendLinkId === subjectId) {
+      await ref.update({ status: "cancelled" });
+    }
+  }
+}
+
 export const hpGuestView = onRequest({ invoker: "public" }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ error: "method_not_allowed" });
@@ -194,7 +347,8 @@ export const hpGuestView = onRequest({ invoker: "public" }, async (req, res) => 
   }
   try {
     const token = await loadToken(req.query.t);
-    const view = await buildView(token);
+    const view: GuestPayload =
+      token.data.scope === "booking" ? await buildBookingView(token) : await buildView(token);
     await touch(token.id);
     // Never cached: a revoked link has to stop working immediately.
     res.set("Cache-Control", "no-store");
@@ -233,6 +387,29 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
     }
 
     const { eventId, scope, subjectId } = token.data;
+
+    // Booking links share the endpoint and nothing else: no event, no party,
+    // and none of the four event actions.
+    if (scope === "booking") {
+      if (action !== "book_slot" && action !== "cancel_booking") {
+        res.status(403).json({ error: "not_permitted" });
+        return;
+      }
+      await handleBookingSubmit(token, action, payload);
+      const view = await buildBookingView(token);
+      await touch(token.id);
+      res.set("Cache-Control", "no-store");
+      res.status(200).json(view);
+      return;
+    }
+
+    const bookingOnly: GuestAction[] = ["book_slot", "cancel_booking"];
+    if (bookingOnly.includes(action)) {
+      res.status(403).json({ error: "not_permitted" });
+      return;
+    }
+
+    if (!eventId) throw new InvalidToken();
     const eventRef = db.collection(EVENTS).doc(eventId);
     const now = new Date().toISOString();
 

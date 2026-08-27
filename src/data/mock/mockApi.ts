@@ -1,6 +1,9 @@
-import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
+import type { HostApi, AvailabilitySettingsPatch, AvailabilityInput, FriendLinkInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
 import type {
+  AvailabilitySettings,
+  Booking,
   CrewMember,
+  FriendLink,
   EventBundle,
   EventDoc,
   EventRecap,
@@ -15,6 +18,8 @@ import type {
   TokenScope,
 } from '../types'
 import { buildStore, type MockStore } from './seed'
+import { DEFAULT_KINDS, DEFAULT_OPEN_HOURS, currentZone } from '../../lib/availability'
+import { normalizeAvailability } from '../availabilitySettings'
 import { materializeTasks, runItemsFromTemplate, tasksFromTemplate } from '../instantiate'
 
 // In-memory implementation of the same seam the Firebase one implements.
@@ -24,13 +29,18 @@ import { materializeTasks, runItemsFromTemplate, tasksFromTemplate } from '../in
 const STORAGE_KEY = 'novara-hosts-mock-v1'
 
 function load(): MockStore {
+  const fresh = buildStore()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as MockStore
+    // Merged over a fresh fixture rather than used as is: a store persisted
+    // before a new collection existed would otherwise come back missing that
+    // key, and every read of it throws. Merging keeps saved demo state usable
+    // across a schema change instead of asking for a manual cache clear.
+    if (raw) return { ...fresh, ...(JSON.parse(raw) as Partial<MockStore>) }
   } catch {
     // A corrupt or unavailable store just falls back to the fixture.
   }
-  return buildStore()
+  return fresh
 }
 
 const store: MockStore = load()
@@ -341,6 +351,7 @@ export const mockApi: HostApi = {
       revoked: false,
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
+      expiresAt: null,
     }
     store.tokens.push(fresh)
 
@@ -476,6 +487,86 @@ export const mockApi: HostApi = {
 
   deleteAvailability: (blockId) => {
     store.availability = store.availability.filter((b) => b.id !== blockId)
+    persist()
+    return ok(undefined)
+  },
+
+  // F14 to F19, availability. The openings stored here are derived in the
+  // browser from a calendar file that is never uploaded anywhere.
+  getAvailabilitySettings: () => ok(normalizeAvailability(store.availabilitySettings, MOCK_UID)),
+
+  saveAvailabilitySettings: (patch: AvailabilitySettingsPatch, uid: string) => {
+    const current: AvailabilitySettings = store.availabilitySettings ?? {
+      ownerUid: uid,
+      openHours: DEFAULT_OPEN_HOURS,
+      timeZone: currentZone(),
+      bufferMinutes: 30,
+      kinds: DEFAULT_KINDS,
+      defaultHorizonDays: 90,
+      windows: [],
+      source: null,
+      googleCalendarIds: [],
+      calendarImportedAt: null,
+      importedEventCount: 0,
+    }
+    store.availabilitySettings = { ...current, ...patch, ownerUid: uid }
+    persist()
+    return ok(undefined)
+  },
+
+  listFriendLinks: () => ok(owned(store.friendLinks)),
+
+  createFriendLink: (input: FriendLinkInput, uid: string) => {
+    const fresh = token()
+    const link: FriendLink = {
+      ...input,
+      id: id('fl'),
+      ownerUid: uid,
+      tokenId: fresh,
+      createdAt: new Date().toISOString(),
+    }
+    store.friendLinks.push(link)
+    store.tokens.push({
+      id: fresh,
+      ownerUid: uid,
+      eventId: null,
+      scope: 'booking',
+      subjectId: link.id,
+      revoked: false,
+      createdAt: link.createdAt,
+      lastUsedAt: null,
+      // A friend link is meant to be kept, so it does not expire on its own.
+      expiresAt: null,
+    })
+    persist()
+    return ok({ id: link.id, token: fresh })
+  },
+
+  updateFriendLink: (linkId, patch) => {
+    const link = store.friendLinks.find((l) => l.id === linkId)
+    if (link) Object.assign(link, patch)
+    persist()
+    return ok(undefined)
+  },
+
+  deleteFriendLink: (linkId) => {
+    const link = store.friendLinks.find((l) => l.id === linkId)
+    // Revoking the token matters more than removing the row: a link that stays
+    // live after the host thinks she deleted it is the worst failure here.
+    if (link) {
+      const token = store.tokens.find((t) => t.id === link.tokenId)
+      if (token) token.revoked = true
+    }
+    store.friendLinks = store.friendLinks.filter((l) => l.id !== linkId)
+    persist()
+    return ok(undefined)
+  },
+
+  listBookings: () => ok(owned(store.bookings).filter((b) => b.status === 'booked')),
+
+  cancelBooking: (bookingId) => {
+    const booking = store.bookings.find((b: Booking) => b.id === bookingId)
+    if (booking) booking.status = 'cancelled'
     persist()
     return ok(undefined)
   },

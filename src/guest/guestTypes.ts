@@ -67,10 +67,61 @@ export interface GuestView {
   recap: GuestRecap | null
 }
 
-export type GuestAction = 'respond_dates' | 'update_task' | 'confirm_role' | 'add_note'
+export type GuestAction =
+  | 'respond_dates'
+  | 'update_task'
+  | 'confirm_role'
+  | 'add_note'
+  | 'book_slot'
+  | 'cancel_booking'
 
 export interface GuestSubmitBody {
   t: string
   action: GuestAction
   payload: Record<string, unknown>
+}
+
+/** F18. A booking link is not about an event, so it gets its own payload. */
+export type BookingKind = 'coffee' | 'run' | 'call'
+
+export interface BookingSlot {
+  kind: BookingKind
+  startsAt: string
+  endsAt: string
+  durationMinutes: number
+}
+
+/** A stretch the host is open. Epoch milliseconds, short keys to stay small. */
+export interface BookingWindow {
+  s: number
+  e: number
+}
+
+/** A thing to do together. The duration is a suggestion, not a fixed length. */
+export interface BookingKindTemplate {
+  kind: BookingKind
+  label: string
+  defaultMinutes: number
+  choices: number[]
+}
+
+export interface BookingView {
+  scope: 'booking'
+  hostName: string
+  friendName: string
+  kinds: BookingKindTemplate[]
+  /**
+   * Only the open stretches, never the calendar. The host's events, titles,
+   * and locations are computed against on the server and never sent here.
+   */
+  windows: BookingWindow[]
+  /** What this friend has already booked, so the page can show and cancel it. */
+  mine: (BookingSlot & { id: string })[]
+}
+
+/** What hpGuestView returns. Discriminated by scope. */
+export type GuestPayload = GuestView | BookingView
+
+export function isBookingView(view: GuestPayload): view is BookingView {
+  return view.scope === 'booking'
 }

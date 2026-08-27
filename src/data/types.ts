@@ -7,7 +7,7 @@ export type EventStatus = 'draft' | 'planning' | 'confirmed' | 'live' | 'wrapped
 export type PartyStatus = 'invited' | 'confirmed' | 'declined'
 export type ResponseValue = 'yes' | 'no' | 'maybe'
 export type LinkStatus = 'draft' | 'final'
-export type TokenScope = 'party' | 'crew' | 'recap'
+export type TokenScope = 'party' | 'crew' | 'recap' | 'booking'
 
 /** Where a date response came from. Both count the same toward confirming. */
 export type ResponseSource = 'link' | 'host'
@@ -276,16 +276,135 @@ export interface CitywideMoment {
   endDate: string
 }
 
+/**
+ * F14 to F19, the personal availability layer.
+ *
+ * Deliberate: the host's calendar never leaves her browser. The `.ics` is
+ * parsed locally, derivation runs locally, and the only thing stored is the
+ * list of openings she is offering. No titles, no locations, no attendees,
+ * and not even the times she is busy. A booking link can therefore only ever
+ * reveal when she is free, which is exactly what she is choosing to publish.
+ *
+ * It also keeps the guest function trivial: filter to the horizon, drop what
+ * is already booked, return. No derivation logic on the server, so there is
+ * no second copy of the rules to keep in step.
+ */
+/** Mirrors MeetKind in src/lib/availability, kept here so data has no lib import. */
+export type MeetKindName = 'coffee' | 'run' | 'call'
+
+export interface AvailabilitySettings {
+  /** Document id is the owner's uid: one settings document per host. */
+  ownerUid: string
+  /**
+   * When she is open at all, by weekday, index 0 = Sunday. Always seven.
+   * This is the sleep and downtime setting, and the only time constraint:
+   * inside these hours anything not on the calendar is bookable.
+   */
+  openHours: DayHoursDoc[]
+  /**
+   * The host's IANA zone, for example "America/Los_Angeles".
+   *
+   * Open hours are wall clock, so turning them into absolute time needs a
+   * named zone. Everything published is absolute, so this is only needed for
+   * derivation and for labelling times to someone in a different zone.
+   */
+  timeZone: string
+  /** Minutes kept clear either side of anything already on the calendar. */
+  bufferMinutes: number
+  /** Kinds of thing to do, each a suggested duration rather than a fixed slot. */
+  kinds: KindTemplateDoc[]
+  defaultHorizonDays: number
+  /**
+   * The published open stretches. One row per stretch, not per possible start
+   * time: enumerating starts was storing a rendering choice, and it turned an
+   * ordinary calendar into four thousand "open times".
+   */
+  windows: { s: number; e: number }[]
+  /** Where the events came from last time. Null until she connects anything. */
+  source: 'google' | 'file' | null
+  /** Which Google calendars to read. Empty when the source is a file. */
+  googleCalendarIds: string[]
+  calendarImportedAt: string | null
+  /** How many events the last import read, for the host's own confidence. */
+  importedEventCount: number
+}
+
+export interface DayHoursDoc {
+  /** Local "HH:MM". */
+  start: string
+  end: string
+  /** Closing a day keeps its hours, so toggling it back on restores them. */
+  open: boolean
+}
+
+export interface KindTemplateDoc {
+  kind: MeetKindName
+  label: string
+  defaultMinutes: number
+  choices: number[]
+}
+
+export interface FriendLink {
+  id: string
+  ownerUid: string
+  name: string
+  horizonDays: number
+  kinds: MeetKindName[]
+  tokenId: string
+  createdAt: string
+}
+
+/** F19. A booked slot. Blocks the time for every other friend. */
+export interface Booking {
+  id: string
+  ownerUid: string
+  friendLinkId: string
+  friendName: string
+  kind: MeetKindName
+  startsAt: string
+  endsAt: string
+  /** Chosen at booking from the kind's suggestion, not fixed by the kind. */
+  durationMinutes: number
+  /** How to reach them, as typed. Free text on purpose. */
+  contact: string
+  note: string
+  status: 'booked' | 'cancelled'
+  createdAt: string
+}
+
 export interface GuestToken {
   id: string
   ownerUid: string
-  eventId: string
+  /**
+   * Null for booking tokens. Every other scope is about one event; a booking
+   * link belongs to the host herself, so this is the first guest token that is
+   * not scoped to an event subtree. Widening this is deliberate, and noted in
+   * docs/Availability_Feature_Plan_v1.md section 4.
+   */
+  eventId: string | null
   scope: TokenScope
   subjectId: string
   revoked: boolean
   createdAt: string
   lastUsedAt: string | null
+  /**
+   * When the link stops working on its own. Null means never, which is right
+   * for a partner or friend link they are meant to keep. A huddle or a
+   * one-off calendar check sets one, and the host can push it out again.
+   */
+  expiresAt: string | null
 }
+
+/** Expiry choices, shortest first. Capped at a month: past that, "never" is honest. */
+export const EXPIRY_PRESETS: { hours: number; label: string }[] = [
+  { hours: 1, label: '1 hour' },
+  { hours: 4, label: '4 hours' },
+  { hours: 24, label: '1 day' },
+  { hours: 72, label: '3 days' },
+  { hours: 168, label: '1 week' },
+  { hours: 336, label: '2 weeks' },
+  { hours: 720, label: '1 month' },
+]
 
 // CRM. Guest CRM Plan section 2. People who attend events, with per-event
 // registration history. Host-side only: guests never read or write hp_people.

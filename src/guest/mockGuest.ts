@@ -1,6 +1,8 @@
 import { mockStore, mockPersist } from '../data/mock/mockApi'
 import { GuestError } from './guestClient'
-import type { GuestAction, GuestView } from './guestTypes'
+import type { BookingView, GuestAction, GuestPayload, GuestView } from './guestTypes'
+import { fitsInWindow, windowsForFriend } from '../lib/availability'
+import type { Booking } from '../data/types'
 import { orgTypeLabel, ownerLabel } from '../data/profiles'
 import type { OwnerRef } from '../data/types'
 
@@ -8,10 +10,49 @@ import type { OwnerRef } from '../data/types'
 // guest experience can be checked at 390 px with nothing running behind it.
 // The real path is the two Cloud Functions; this mirrors their output.
 
+/** Expiry and revocation give the caller the same answer, as in the function. */
+function expired(record: { expiresAt: string | null }): boolean {
+  return Boolean(record.expiresAt && Date.parse(record.expiresAt) < Date.now())
+}
+
+/** F18. A booking link has no event, so it takes its own path out early. */
+function buildBooking(token: string): BookingView {
+  const store = mockStore()
+  const record = store.tokens.find((t) => t.id === token)
+  if (!record || record.revoked || expired(record)) throw new GuestError('invalid')
+  const link = store.friendLinks.find((l) => l.id === record.subjectId)
+  const settings = store.availabilitySettings
+  if (!link || !settings) throw new GuestError('invalid')
+
+  const now = new Date()
+  const horizon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + link.horizonDays)
+  const booked = store.bookings.filter((b: Booking) => b.status === 'booked')
+
+  return {
+    scope: 'booking',
+    hostName: 'your host',
+    friendName: link.name,
+    kinds: settings.kinds,
+    windows: windowsForFriend(
+      (settings.windows ?? []).map((w) => ({ start: w.s, end: w.e })),
+      { from: now, to: horizon, taken: booked, minMinutes: 15 },
+    ).map((w) => ({ s: w.start, e: w.end })),
+    mine: booked
+      .filter((b) => b.friendLinkId === link.id)
+      .map((b) => ({
+        id: b.id,
+        kind: b.kind,
+        startsAt: b.startsAt,
+        endsAt: b.endsAt,
+        durationMinutes: b.durationMinutes,
+      })),
+  }
+}
+
 function build(token: string): GuestView {
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
-  if (!record || record.revoked) throw new GuestError('invalid')
+  if (!record || record.revoked || expired(record)) throw new GuestError('invalid')
 
   const event = store.events.find((e) => e.id === record.eventId)
   if (!event) throw new GuestError('invalid')
@@ -32,7 +73,8 @@ function build(token: string): GuestView {
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
 
   const view: GuestView = {
-    scope: record.scope,
+    // build() is only reached for event-scoped tokens; booking exits above.
+    scope: record.scope as 'party' | 'crew' | 'recap',
     event: {
       title: event.title,
       description: event.description,
@@ -87,7 +129,10 @@ function build(token: string): GuestView {
   return view
 }
 
-export function mockGuestView(token: string): Promise<GuestView> {
+export function mockGuestView(token: string): Promise<GuestPayload> {
+  const store = mockStore()
+  const record = store.tokens.find((t) => t.id === token)
+  if (record?.scope === 'booking') return Promise.resolve(buildBooking(token))
   return Promise.resolve(build(token))
 }
 
@@ -95,16 +140,19 @@ export function mockGuestSubmit(
   token: string,
   action: GuestAction,
   payload: Record<string, unknown>,
-): Promise<GuestView> {
+): Promise<GuestPayload> {
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
+  if (record?.scope === 'booking') return Promise.resolve(bookingSubmit(token, action, payload))
   if (!record || record.revoked) throw new GuestError('invalid')
   // A recap link is read only, exactly as the real function enforces.
   if (record.scope === 'recap') throw new GuestError('invalid')
 
-  const parties = store.parties[record.eventId] ?? []
+  const eventId = record.eventId
+  if (!eventId) throw new GuestError('invalid')
+  const parties = store.parties[eventId] ?? []
   const party = parties.find((p) => p.id === record.subjectId)
-  const tasks = store.tasks[record.eventId] ?? []
+  const tasks = store.tasks[eventId] ?? []
   const now = new Date().toISOString()
 
   if (action === 'respond_dates' && party) {
@@ -134,4 +182,59 @@ export function mockGuestSubmit(
   record.lastUsedAt = now
   mockPersist()
   return Promise.resolve(build(token))
+}
+
+function bookingSubmit(
+  token: string,
+  action: GuestAction,
+  payload: Record<string, unknown>,
+): BookingView {
+  const store = mockStore()
+  const record = store.tokens.find((t) => t.id === token)
+  if (!record || record.revoked || expired(record)) throw new GuestError('invalid')
+  const link = store.friendLinks.find((l) => l.id === record.subjectId)
+  if (!link) throw new GuestError('invalid')
+
+  if (action === 'book_slot') {
+    const startsAt = String(payload.startsAt ?? '')
+    const durationMinutes = Number(payload.durationMinutes ?? 0)
+    const endsAt = new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString()
+    const kind = payload.kind as Booking['kind']
+    // Re-check against the live windows rather than trusting the posted time:
+    // the page may be minutes old, and this is the one place in the feature
+    // with shared state. The end is recomputed here, never accepted.
+    const view = buildBooking(token)
+    const open = fitsInWindow(
+      view.windows.map((w) => ({ start: w.s, end: w.e })),
+      startsAt,
+      durationMinutes,
+    )
+    if (open) {
+      store.bookings.push({
+        id: `bk-${Date.now().toString(36)}`,
+        ownerUid: link.ownerUid,
+        friendLinkId: link.id,
+        friendName: String(payload.friendName ?? link.name),
+        kind,
+        startsAt,
+        endsAt,
+        durationMinutes,
+        contact: String(payload.contact ?? ''),
+        note: String(payload.note ?? ''),
+        status: 'booked',
+        createdAt: new Date().toISOString(),
+      })
+    }
+  }
+
+  if (action === 'cancel_booking') {
+    const booking = store.bookings.find(
+      (b: Booking) => b.id === payload.bookingId && b.friendLinkId === link.id,
+    )
+    if (booking) booking.status = 'cancelled'
+  }
+
+  record.lastUsedAt = new Date().toISOString()
+  mockPersist()
+  return buildBooking(token)
 }

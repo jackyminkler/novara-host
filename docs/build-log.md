@@ -2,6 +2,304 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-26, the multi-party primitive, time zones, and link expiry
+
+Jacky wants the group surfaces: suggest dates for an event, a template asking for the next few
+slots that work, partners connecting their own calendars, and a live huddle link where a group
+finds and votes on a time together. Push notifications were floated and then withdrawn as "just a
+thought", so expiry ships without a reminder.
+
+**One function under all six surfaces.** `coverage()` sweeps every boundary and labels each span
+with who is free and who is not; `suggest()` ranks by turnout then by earliest. Suggesting event
+dates, a template finding the next three Saturdays, the huddle, and the existing one-to-one friend
+booking are all that call with different UI. Building the huddle first would have been building
+the fifth skin before the thing under it.
+
+**It counts rather than intersects, on purpose.** "When are we all free" is the special case
+where the count equals everyone, and with five partners that set is usually empty while several
+options work for four. Every span names who cannot make it, so the host can see the trade rather
+than an empty result.
+
+**Whole span, not any overlap.** A candidate slot must sit entirely inside a participant's free
+time. Overlap would offer a 9-to-12 window to someone free only from 10, which is a slot they
+cannot actually make.
+
+**One suggestion per day.** Three times on the same Saturday is one option dressed as three, and
+it crowds out the next real alternative.
+
+**Time zones turned out to be cheap, because the model was already right.** Everything published
+is absolute epoch milliseconds, so overlapping two people's free time needs no conversion at all.
+Zones matter at exactly two edges: turning wall-clock open hours into absolute time, which happens
+only in the host's own browser against her own clock, and display. `timeZone` is now stored on the
+settings document, and `zones.ts` holds the formatting helpers.
+
+**A real zone bug, found by clicking rather than reading.** The date suggestion chips wrote
+`new Date(ms).toISOString().slice(0, 16)` into a `datetime-local` input. That converts to UTC, so
+picking a 9am Pacific slot stored 16:00 and read back as four in the afternoon. `datetime-local`
+has no zone of its own and means whatever the browser's zone is. `toLocalInputValue` in
+`lib/dates.ts` is now the one way to fill one, used by both the suggestions and the booking page.
+
+**Link expiry: presets to a month, then "never" is the honest answer.** `expiresAt` is nullable on
+`hp_guestTokens`: null for party, crew, and friend links, which are meant to be kept, and set for
+huddles and one-off calendar checks. An expired link is refused with exactly the same answer as a
+revoked one, because a link that says "this expired" tells a stranger it was once real.
+
+**Closing a day no longer throws its hours away.** Jacky's bug report. A closed day was stored as
+null, so toggling it back on reset the times to a default she never chose. Closed is now a flag
+beside the hours, the inputs stay visible and disabled rather than unmounting, and the normalizer
+migrates old nulls to closed-with-defaults.
+
+**Shipped this pass:** the primitive, zones, expiry, and "Open in your calendar" suggestions in
+event creation, host-only. **Still to build:** partners connecting calendars through a guest link
+with the non-sensitive `calendar.freebusy` scope, template-driven suggestions, the huddle with
+voting, and zone labels on the guest surfaces.
+
+
+## 2026-08-26, availability is a window, not a list of slots
+
+Jacky, reviewing the first build: "availability isn't how many times, it's just open until it
+isn't. I should say what times I'm open for things." And separately, kinds are duration
+templates: "a default 1hr but I can adjust and I can just book something in an open slot."
+
+That is a better model than the one that shipped, and it removes machinery rather than adding it.
+
+**The 4,089 "open times" were a rendering choice leaking into the database.** The first version
+enumerated every 30 minute start inside per-kind hour windows and stored the resulting list. That
+is not a fact about her week, it is one way of drawing it, and storing it made an ordinary
+calendar look like a wall of availability. Storage is now open windows: one row per open stretch,
+a handful per day. A friend page can draw suggested times from a window; the reverse is not
+possible.
+
+**Capacity was the wrong fix, and she said so.** The obvious response to "too many slots" is caps:
+two coffees a week. She rejected it, correctly. Caps answer "how much do I want to meet", which
+is a different question from "when am I free", and the second one was the one being modelled
+badly. Weekly caps are parked, not dismissed, in the plan's "not now".
+
+**Two layers of hours, because one cannot express her week.** Open hours per weekday are the
+sleep and downtime boundary, and nothing is ever offered outside them. A single band was the
+first attempt and it breaks immediately on her own life: sunrise runs force the day to open at
+6am, and then coffees and calls are offered at 6am too. Per-kind narrowing inside open hours is
+the answer, and the defaults now start weekdays at 6:00 and weekends at 7:30, closing at 21:00.
+
+**Duration moved from the host to the guest.** A kind used to fix its own length, so a "coffee"
+was 45 minutes by definition. It is now a suggestion with a picker, and the guest page offers
+half-hourly starts plus a free time input bounded to the window. The server recomputes the end
+from the posted duration and never accepts an end, and it bounds duration at eight hours: an
+unchecked one is a way to write an event stretching to the end of time onto her calendar.
+
+**The reasoning panel was showing her a second copy of her calendar.** Her question was "why is
+it showing me my events for the day", which is the right question: she has Google for that. It
+now only lists readings worth questioning, meaning travel, out of town, and ignored. Anything
+that merely blocked its own hours needs no explanation and is not shown.
+
+**Automatic refresh on page open cannot be relied on, and the copy now says so.** Browsers only
+allow a popup a click asked for. The silent token request usually succeeds with an existing
+grant, but when it does not, it is blocked with no user gesture to justify a window. It fails
+quietly on the automatic pass now rather than reporting a scary popup error for something she
+never pressed, and the promise of "reads itself every time you open this page" was downgraded to
+"refresh whenever your week changes", which is the truth.
+
+**Schema drift took the page down, and the fix is a normalizer on read.** A settings document
+written under the old shape has no `windows` field, and `settings?.windows.length` throws on it:
+the optional chain guards `settings`, not `windows`. `src/data/availabilitySettings.ts` now fills
+every missing field on read in both api implementations, so the UI cannot see a partial document
+and the next shape change lands in one file rather than in every consumer.
+
+
+## 2026-08-26, Google Calendar set up in the console, and read plus write
+
+Console work done in Jacky's browser against `novarasocial-dev`. Most of it already existed,
+which is worth recording because it changed the plan twice.
+
+**The scopes were already there.** `calendar.readonly` and `calendar.events` were both already
+declared as sensitive scopes on the consent screen before today, along with the non-sensitive
+`calendar.freebusy` and `calendar.events.freebusy`. The Calendar API was already enabled. So the
+only console change made was creating one OAuth client, "Novara host web", with origins
+`http://localhost:5173` and `https://novara-host.web.app`. The consumer app's own web client,
+hard coded in `google_auth.dart` for Android Credential Manager, was left alone.
+
+**Checking beat assuming, three times in a row now.** The consumer app "already having calendar
+stuff" turned out to be the device calendar (`add_2_calendar`, `READ_CALENDAR`,
+`NSCalendarsUsageDescription`) plus a `calendar.google.com/render` deep link, none of which touch
+OAuth. But the consent screen separately did already carry both Calendar API scopes. Both facts
+were only knowable by looking.
+
+**Publishing status is "In production", and an earlier draft of the setup doc was wrong to say
+keep it in Testing.** Corrected. The Audience page's "Back to testing" button is now flagged in
+the doc as the one not to press: in Testing only listed test users can complete OAuth at all, and
+consumer users sign in to this project with Google, so it would lock out every real user not on
+the test list.
+
+**The OAuth user cap is a permanent, non-resettable resource.** 2 of 100 used. It counts people
+granting unapproved sensitive scopes, which means each host connecting a calendar spends one
+forever. Guests booking through links never authenticate and cost nothing. Recorded so a wave of
+testers connecting calendars is a deliberate choice rather than a surprise.
+
+**Read and write requested together, one consent.** Jacky asked for write so a confirmed event
+lands on her calendar, considered full `calendar` access, then pulled back from managing whole
+calendars. Landed on `calendar.readonly` plus `calendar.events`.
+
+**The scope grants more than the code uses, on purpose.** `calendar.events` permits editing any
+event on any of her calendars. `src/host/googleWrite.ts` tags everything it creates with a
+private extended property and refuses to update or delete anything without that tag, so the worst
+a bug there can do is damage events Novara created. Upserts are keyed by the tag rather than a
+stored id, so running twice makes one event and a lost id cannot orphan a duplicate.
+
+**Not yet wired:** nothing calls `upsertEvent` yet. Confirming a date, editing event details, and
+friend bookings are the three triggers, and they are the next piece of work.
+
+
+## 2026-08-26, Google Calendar connected, on its own OAuth client
+
+Jacky's call: the file import does not work for a calendar that changes constantly, so F14 gets
+the real integration now. Setup steps for her in `docs/Google_Calendar_Setup.md`.
+
+**Reversed the same day: the client id DOES live in `novarasocial-dev`.** Jacky's call, and the
+better one. The two products are heading for one identity with shared users and shared calendar
+data, so they should share one consent screen; two would make people consent to two apparent
+companies and force everyone to re-consent at merge. It gets its own web client inside that
+project rather than reusing the Firebase-managed one, which the consumer app hard codes for
+Android Credential Manager, so shared identity is kept without touching a credential consumer
+sign in depends on.
+
+Checking the consumer app rather than assuming settled it. It requests only `profile` and
+`email`, both basic. Its calendar features are the **device** calendar (`add_2_calendar` plus an
+OS permission) and a `calendar.google.com/render` deep link, neither of which touches Google
+OAuth. So `calendar.readonly` is the project's first sensitive scope, and scopes are requested
+per call, so consumer sign in is unaffected. The cost is that publishing broadly later needs
+verification, which is needed by then anyway.
+
+The original reasoning is kept below because the shape of the risk is still worth knowing, but
+the conclusion it reached was wrong, and it overstated the danger: adding a scope to a consent
+screen does not change what consumer users see at sign in.
+
+**Superseded reasoning, kept for the risk shape.** The OAuth client id deliberately does NOT live in `novarasocial-dev`. A Google Cloud project
+has one OAuth consent screen shared by everything in it, and `calendar.readonly` is a Google
+sensitive scope. Adding it to the Firebase project's consent screen would change what every
+Novara consumer user sees when they sign in with Google, and would push a published screen back
+into verification review, which can hold up consumer sign in while it is pending. That is
+consumer infrastructure, so the rule is to surface it rather than change it. An OAuth client id
+does not have to share a project with Firebase: calendar access gets its own small project and
+its own consent screen, driven by Google Identity Services rather than Firebase Auth's provider.
+The cost is one extra consent prompt, which is arguably clearer anyway.
+
+**Testing mode, not published.** Publishing a sensitive scope triggers Google verification,
+which is weeks of review and only buys the ability to let strangers connect. Testing mode works
+immediately and allows 100 test users. The trade is an "unverified app" interstitial once and a
+grant that lapses every seven days.
+
+**The privacy shape is unchanged, which is the point.** Google talks to the browser, the browser
+derives, and only the openings are published. Nothing about the calendar reaches our server on
+either path, so nothing about the guest function or the rules changed.
+
+**Google answers what the .ics rules have to guess.** `eventType` identifies working location
+markers and birthdays outright, and the attendee list says whether she accepted. Declined
+invitations no longer block time, which on a calendar that gets a lot of invitations is probably
+the single largest source of phantom busyness. `singleEvents=true` also makes Google expand
+recurrences, so none of the RRULE handling applies on this path.
+
+**Refresh is on page open, not on a schedule, and that is a real limit.** Background sync needs a
+stored refresh token and a job that can read her calendar, which gives up the property above.
+The staleness window is the gap between visits, and a friend can book a slot that filled since.
+Recorded in the plan's "not now" rather than quietly ignored.
+
+**A blocked popup used to hang the button forever.** Google calls exactly one of `callback` or
+`error_callback`, and in some failure modes neither: a popup blocked before it opens left the
+promise unsettled and the button stuck reading "Reading". Now a first-outcome-wins settle plus a
+timeout guarantees an answer, and a blocked popup says so specifically, because "Google did not
+grant access" would send her looking in entirely the wrong place. Found by clicking it, not by
+reading it.
+
+**Three request modes, because "did she ask" and "may we prompt" are different questions.**
+`auto` on page open stays quiet about needing consent. `refresh` is asked for but tries silently
+first, so it does not re-prompt for consent already given. `connect` may open Google's window.
+An expired grant flips the button back to Connect, which was a dead end in the first pass: it
+told her to reconnect while showing only a refresh button.
+
+
+## 2026-08-26, availability built end to end, and the privacy shape that fell out of it
+
+F14 to F19 built and verified in mock mode: calendar file in, openings out, friend link, guest
+booking, host sees the booking. Details in `docs/Availability_Feature_Plan_v1.md`.
+
+**The calendar never leaves the browser, and that turned out to be the cheaper design.** The
+first shape stored normalized events in Firestore so the guest function could derive slots. Two
+problems: it puts a copy of Jacky's whole calendar in a database, and it puts the blocking rules
+in two build roots that would drift, the way `guestTypes.ts` already has to be kept in step by
+hand. Storing only the derived openings fixes both. The `.ics` is parsed and derived client
+side, and `hp_availabilitySettings` holds a flat list of start times per kind. The guest
+function is then a filter, not a rules engine: no second copy to drift, and a breach or a bad
+rule can only ever leak when she is free, which is the thing she is publishing anyway.
+
+**ICS rather than Google OAuth, for now.** OAuth needs a consent screen configured in Google
+Cloud and, past a point, verification review. An exported `.ics` needs none of that and works
+tonight. Both sit behind the same interface, so the secret iCal URL fetched by a scheduled
+function is an upgrade rather than a rewrite. No file reaches Storage: it is read in the browser
+and discarded, which also leaves the M0 Storage non-goal intact.
+
+**The `booking` token scope widens what a guest token means.** Every other scope names an event
+and reads from that event's subtree. A booking link belongs to the host, so `eventId` is now
+nullable on `hp_guestTokens`. Still two endpoints, per the standing rule: `book_slot` and
+`cancel_booking` join the action switch and are refused for every other scope, and the four
+event actions are refused for `booking`.
+
+**The server re-checks every booking against the published offers.** Trusting the posted slot
+would let a stale page double-book, and this is the only shared state in the feature. The friend
+sees an honest "that time was taken while you were deciding" rather than a silent success.
+
+**Two bugs found by running it, not by reading it.** `npm run dev:mock` did not actually run
+without a backend: `AuthProvider` imports `lib/firebase` statically, so `initializeApp` ran and
+threw on an absent `.env.local`. Mock mode now uses the same placeholder config as the emulator.
+Separately, the mock store loaded persisted JSON as is, so a store saved before a new collection
+existed came back missing that key and every read of it threw. It now merges over a fresh
+fixture, which makes demo state survive a schema change instead of needing a manual cache clear.
+
+**Left for Jacky:** the rules blocks in `docs/pending-rules.md` gate taking this off mock.
+
+
+## 2026-08-26, personal availability calendar: placement and four decisions
+
+Jacky wants a personal availability layer over her own calendar: friends book a coffee, a run,
+or a call into slots derived from what her calendar already says. Four decisions came out of the
+routing conversation.
+
+**1. Event Zero is no longer a gate.** Jacky's call: keep it as an idea of validation, but stop
+treating it as the thing that has to happen before more gets built. Features may land ahead of
+their PRD milestone. This supersedes the reflex in CLAUDE.md and PRD 8.5 to shrink toward the
+PRD whenever a feature idea appears mid-build. Scope discipline now means "record the decision
+here", not "defer to the milestone". The PRD 4.6 non-goal on external calendar sync is therefore
+overridden for this feature specifically, not deleted.
+
+**2. It lives in this repo, not in `novara-matching`, and not in a new service.** `novara-matching`
+is a Python CLI over spreadsheets: no server, no HTTP, no TypeScript. Renaming it into a shared
+front end service would replace its contents and keep only the name, and would blur the one-subject
+discipline that makes `MATCHING.md` plus `MATCHING_INBOX.md` work. A service is also premature at
+one app and one user, and would add a third repo to a rules-deploy handoff that has already
+stranded changes off `main` twice in one day.
+
+**The seam that makes the service unnecessary.** The feature is three parts with different
+portability: calendar ingest (Google-specific, needs a server, not reusable), derivation
+(events plus rules to slots, a pure calculation), and the booking surface (different in each
+app anyway). Only derivation is worth sharing, and a pure function is shared by moving a file,
+not by adding a network hop. It lives in `src/lib/availability/` with no firebase, react, clock,
+or network imports, so it lifts into a package unchanged when the consumer app wants run booking.
+
+**3. One link per friend, not one public link.** Availability is private to friends, opened for
+booking per person. This keeps the existing capability-token shape rather than introducing a
+broadly shared URL, which would have been a different security object: no rate limiting (the M0
+accepted risk covered five known partners, not a forwarded link), and it would leak the shape of
+her calendar to anyone holding it.
+
+**4. Horizon is per link, default 90 days.** Jacky's reasoning: three months out is ironically
+the easiest place to find a shared open slot, and it matches the 90 day runway she already wants
+for events. Longer horizons are real, six months, or a year for something like a bachelorette,
+so the horizon is a setting on the link with a default rather than a constant.
+
+**Blocking rules ship as defaults, tuned later.** How far an event blocks around itself is
+Jacky's domain knowledge, not derivable from the calendar. First pass is a written default set,
+to be corrected against real events and eventually made customizable or learned.
+
+
 ## 2026-08-25, the four guest exports imported and verified against the emulator
 
 CRM sprint 1, step 2. `seed/import-luma-guests.ts` ran against the emulator on all four brain
