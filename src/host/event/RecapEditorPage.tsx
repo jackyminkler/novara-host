@@ -190,7 +190,7 @@ function RecapForm({
           aria-label="Remembered attendee"
         />
         <p className="mt-1 text-[11px] text-mut">
-          Nothing here gates anyone. Full guest list import arrives with lists in M1.
+          Nothing here gates anyone. Import signups on the overview tab to see sources below.
         </p>
       </Card>
 

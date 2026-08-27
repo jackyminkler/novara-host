@@ -2,7 +2,42 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
-## 2026-08-27, matching: rank runs in the host app on a vendored engine
+## 2026-08-27, the M1 host build: everything concretely specified, in six commits
+
+Jacky asked for all remaining host functionality in the PRD with no milestone gating, to test
+and tweak. M0 was already live, so this build is the M1 feature set plus the unfinished CRM
+plan phases plus M-match-0, built as six sequential commits on
+`claude/host-functionality-build-394473`: data seam (`5b008b8`), templates (`a442a71`),
+workspace depth (`e688153`), CRM completion (`e646535`), guest surface and card and voice
+notes (`3781acb`), matching (`3d5897d`).
+
+**Shipped:** template library and editor with save-as-template and per-template matching
+config; deliverables checklists both directions with an effort ledger line, on host and guest
+views; spend log and per-party ROI on the recap editor with show rate by source and the PRD
+priors as the no-data fallback; shot list, talk tracks, permit check chips, date contention
+chips; the site profile lessons loop on venue partners; people CSV export and the in-app Luma
+import sharing one merge module with the seed importer; the follow-up hub unifying capture and
+people follow-ups with a copy-an-invite default action; promote capture to person with a
+`personId` back-link; standing availability per partner, aggregated from real responses plus
+editable windows and blackouts, warning on date options; the QR share card behind a fourth
+token scope (`card`) where a scanned guest can leave their details straight into capture;
+voice notes on capture through Firebase Storage; and rank matching in-app on the vendored
+engine (its own entry below).
+
+**Deliberately not built, and why:** email nudges (needs Jacky's provider decision, the one
+M1 item awaiting her); external calendar sync (external service); sparks and pods (Python
+canonical behind a Cloud Run service that deploys from `novara-matching`, per the matching
+spec); org accounts, activation module, payments, vendor board (M2 and M3 are directional
+paragraphs that need their own specs first).
+
+**Owed to Jacky through the consumer repo** (queued under Pending in `docs/pending-rules.md`):
+the `hp_profiles` block, the `matching` subcollection block inside `hp_events`, and the first
+Storage rules path, `hp_voice`, without which voice notes fail in production with a plain
+message. Everything else works in production the moment this branch deploys; mock mode shows
+all of it today.
+
+**One copy fix in this closing commit:** the recap's remembered-attendees caption still said
+guest list import arrives with M1 lists, which this build made untrue.
 
 M-match-0 from `docs/Host_App_Matching_Feature_Spec_v1.md`. An event workspace gets a Matching
 tab, after Run of show, and rank scores the guests already imported against that event.
