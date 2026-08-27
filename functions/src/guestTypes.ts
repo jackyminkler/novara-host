@@ -77,8 +77,15 @@ export type GuestAction =
 
 /**
  * Only these actions are ever accepted. The first four are PRD 3.2; the two
- * booking actions are F18 and are refused for every scope except `booking`.
- * Still two endpoints, per the standing rule against a third.
+ * booking actions are F18 and are refused for every scope except `booking`;
+ * the two huddle actions are the same for `huddle`. Still two endpoints, per
+ * the standing rule against a third.
+ *
+ * This array is the runtime gate, and the type above is not. An action that
+ * exists in `GuestAction` but is missing here is refused as `unknown_action`
+ * before the scope handler ever runs, which is how the huddle actions were
+ * dead in production while mock mode, which never consults this array, kept
+ * showing them working.
  */
 export const GUEST_ACTIONS: GuestAction[] = [
   'respond_dates',
@@ -87,6 +94,8 @@ export const GUEST_ACTIONS: GuestAction[] = [
   'add_note',
   'book_slot',
   'cancel_booking',
+  'join_huddle',
+  'cast_vote',
 ]
 
 /** F18. A booking link is not about an event, so it gets its own payload. */
