@@ -11,7 +11,7 @@
 // and several that work for four.
 
 import type { Interval } from './types'
-import { merge } from './windows'
+import { intersect, merge } from './windows'
 
 export interface Participant {
   id: string
@@ -105,6 +105,19 @@ export interface SuggestOptions {
    * Saturdays rather than the next free Tuesday.
    */
   weekdays?: number[]
+  /**
+   * Absolute stretches a suggestion is allowed to sit inside. Every
+   * participant's free time is intersected with these before coverage runs.
+   *
+   * One mechanism instead of several. A caller has bounds of different kinds
+   * to respect: nothing before now, nothing after the date the thing has to
+   * have happened by, and only the hours the organizer opened. All three are
+   * the same fact once they are absolute time, so callers fold them together
+   * and hand over one list, and this function never learns what any of them
+   * meant. Absent means unbounded, which is what every earlier caller had. An
+   * empty list means nothing is allowed, so nothing is suggested.
+   */
+  within?: Interval[]
 }
 
 export interface Suggestion {
@@ -129,8 +142,16 @@ export function suggest(participants: Participant[], options: SuggestOptions): S
   const weekdays = options.weekdays && options.weekdays.length > 0 ? options.weekdays : null
   const preferred = parsePreferred(options.preferredStart)
 
+  // Clipped before coverage rather than after, so someone whose free time only
+  // touches the edge of an allowed window is counted busy for a slot they
+  // cannot actually make, exactly as coverage already treats a partial overlap.
+  const within = options.within
+  const bounded = within
+    ? participants.map((p) => ({ ...p, free: intersect(p.free, within) }))
+    : participants
+
   const candidates: Suggestion[] = []
-  for (const span of coverage(participants)) {
+  for (const span of coverage(bounded)) {
     if (span.end - span.start < durationMs) continue
     if (span.free.length < minFree) continue
     if (weekdays && !weekdays.includes(new Date(span.start).getDay())) continue

@@ -132,6 +132,89 @@ describe('suggest', () => {
   })
 })
 
+describe('suggest within', () => {
+  const span = (s: string, e: string) => ({ start: at(s), end: at(e) })
+  const three = [
+    person('a', ['2026-09-10T09:00:00', '2026-09-10T17:00:00'], ['2026-09-11T09:00:00', '2026-09-11T17:00:00']),
+    person('b', ['2026-09-10T14:00:00', '2026-09-10T17:00:00'], ['2026-09-11T09:00:00', '2026-09-11T17:00:00']),
+    person('c', ['2026-09-11T09:00:00', '2026-09-11T17:00:00']),
+  ]
+
+  it('counts someone free only for the part of their time the bound allows', () => {
+    // b says 17:00 to 20:00 but the plan does not open until 18:00, so the
+    // 18:00 slot is one they can make and a 17:00 one does not exist at all.
+    const out = suggest(
+      [
+        person('a', ['2026-09-10T17:00:00', '2026-09-10T21:00:00']),
+        person('b', ['2026-09-10T17:00:00', '2026-09-10T20:00:00']),
+      ],
+      {
+        durationMinutes: 90,
+        limit: 5,
+        within: [span('2026-09-10T18:00:00', '2026-09-10T19:30:00')],
+      },
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]!.start).toBe(at('2026-09-10T18:00:00'))
+    expect(out[0]!.end).toBe(at('2026-09-10T19:30:00'))
+    expect(out[0]!.free).toEqual(['a', 'b'])
+  })
+
+  it('drops the part of someone free time that falls outside the bound', () => {
+    const out = suggest([person('a', ['2026-09-10T09:00:00', '2026-09-10T21:00:00'])], {
+      durationMinutes: 60,
+      limit: 5,
+      within: [span('2026-09-10T18:00:00', '2026-09-10T21:00:00')],
+    })
+    expect(out).toHaveLength(1)
+    expect(out[0]!.start).toBe(at('2026-09-10T18:00:00'))
+  })
+
+  it('suggests nothing at all when the bound allows nothing', () => {
+    const out = suggest([person('a', ['2026-09-10T09:00:00', '2026-09-10T21:00:00'])], {
+      durationMinutes: 60,
+      limit: 5,
+      within: [],
+    })
+    expect(out).toEqual([])
+  })
+
+  it('leaves the answer alone when the bound is wider than anyone free time', () => {
+    const plain = suggest(three, { durationMinutes: 60, limit: 3 })
+    const bounded = suggest(three, {
+      durationMinutes: 60,
+      limit: 3,
+      within: [span('2026-09-01T00:00:00', '2026-10-01T00:00:00')],
+    })
+    expect(bounded).toEqual(plain)
+  })
+
+  it('still keeps to one option a day and to the duration inside the bound', () => {
+    // Two evenings allowed, and the second one is too short to hold 90 minutes.
+    const out = suggest(
+      [
+        person(
+          'a',
+          ['2026-09-10T09:00:00', '2026-09-10T23:00:00'],
+          ['2026-09-11T09:00:00', '2026-09-11T23:00:00'],
+        ),
+      ],
+      {
+        durationMinutes: 90,
+        limit: 5,
+        within: [
+          span('2026-09-10T18:00:00', '2026-09-10T20:00:00'),
+          span('2026-09-10T20:30:00', '2026-09-10T22:00:00'),
+          span('2026-09-11T18:00:00', '2026-09-11T19:00:00'),
+        ],
+      },
+    )
+    expect(out).toHaveLength(1)
+    expect(new Date(out[0]!.start).getDate()).toBe(10)
+    expect(out[0]!.start).toBe(at('2026-09-10T18:00:00'))
+  })
+})
+
 describe('zones', () => {
   it('shows the same instant as a different wall clock elsewhere', () => {
     const instant = new Date('2026-09-10T16:00:00Z')

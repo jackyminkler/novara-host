@@ -54,6 +54,25 @@ export function subtract(from: Interval[], cut: Interval[]): Interval[] {
   return out
 }
 
+/** Everything both sides cover. Either side empty means nothing is left. */
+export function intersect(a: Interval[], b: Interval[]): Interval[] {
+  const left = merge(a)
+  const right = merge(b)
+  const out: Interval[] = []
+  let i = 0
+  let j = 0
+  while (i < left.length && j < right.length) {
+    const start = Math.max(left[i]!.start, right[j]!.start)
+    const end = Math.min(left[i]!.end, right[j]!.end)
+    if (end > start) out.push({ start, end })
+    // Advance whichever ends first. The other one may still reach into what
+    // comes next on this side, so dropping it here would lose an overlap.
+    if (left[i]!.end < right[j]!.end) i += 1
+    else j += 1
+  }
+  return out
+}
+
 export function pad(intervals: Interval[], minutes: number): Interval[] {
   const ms = minutes * 60000
   return intervals.map((i) => ({ start: i.start - ms, end: i.end + ms }))
