@@ -206,20 +206,38 @@ what exists and what does not.
 
 73 unit tests, both build roots typecheck clean, `npm run build` passes.
 
+**F20 built on top of this, 2026-08-26 night session** (branch
+`claude/availability-calendar-continue-750d53`): plans as their own sidebar surface with a
+create flow and a detail page, per-weekday hours with published allowed windows, respond-by
+and happen-by deadlines with four guest phases, manual joins with optional bounded emails,
+the organizer's pick with a composer, the Google Calendar invite through `googleWrite` with
+ICS and add-to-Google fallbacks, and the `GUEST_ACTIONS` fix that was silently refusing all
+real huddle submissions. 126 unit tests, both build roots typecheck, build passes.
+
+Verified live in mock mode: the full journey (create with weekday-evening plus weekend
+hours, guest joins by hand at 390 px with today dropped and the list bounded by happen-by,
+turnout ranking across two participants, a moving vote, the pick with an edited time,
+location and notes on the settled card, correct UTC times in the Google render URL, the
+closed state, the passed state, and the change-my-answer prefill round trip). Not
+exercised tonight, needs a Google client id and a signed-in host: the freebusy join path
+and real invite creation; both are code paths on machinery PR #1 already exercised.
+
 **Not done, in the order worth doing them:**
 
-- **Nothing calls `src/host/googleWrite.ts`.** It is built and tested, and refuses to touch any
-  event lacking its own tag, but no caller exists. The three triggers are confirming a date,
-  editing event details after confirmation, and a friend booking. This is the piece Jacky asked
-  for when she said "update on my calendar when I'm setting up an event".
-- **Settling a huddle does not create an event.** `settledStartsAt` exists on the huddle and the
-  guest page renders the settled state, but no host control sets it and nothing turns it into an
-  event. It should feed the existing event-creation flow rather than a second path.
+- **A settled plan does not create an event workspace.** The pick carries location and
+  notes and the invite, which covers a plan-first gathering. Turning a settled plan into an
+  `hp_events` workspace (tasks, run of show, parties) should feed the existing
+  event-creation flow rather than a second path.
+- **`googleWrite.ts` has one caller now, the plan invite.** The other two triggers are
+  still unwired: confirming an event date, and a friend booking landing on her calendar.
 - **Partner calendar answers are per-date only.** A partner connecting their calendar answers the
   proposed dates yes or no. Their free windows are not retained, so `suggest` cannot yet rank
   dates across host plus partners. The pieces exist; nothing joins them.
-- **Zone labels are on the booking page only.** The huddle shows the viewer's zone; the host
+- **Zone labels are on the booking page only.** The plan page shows the viewer's zone; the host
   pages assume one zone throughout.
+- **The invite's Google link is not stored.** After a reload the settled card offers
+  "Update the invite" but not "Open in Google Calendar" until one update runs, because
+  `htmlLink` lives only in the create response. One nullable field would fix it.
 
 **Blocked on Jacky, and it blocks real testing:** four rules blocks in `docs/pending-rules.md`
 (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`). Verified against the
