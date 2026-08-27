@@ -27,6 +27,14 @@ export type AnalyticsEvent =
   | 'hp_roi_viewed'
   | 'hp_shot_toggled'
   | 'hp_site_lesson_added'
+  // CRM completion. Between them these answer the one question the guest CRM
+  // has to earn: does a list that took an import ever get used again. An
+  // export or an invite copied is the list doing work; a promotion is a
+  // handshake becoming someone the host can find later.
+  | 'hp_people_exported'
+  | 'hp_csv_import_completed'
+  | 'hp_followup_invite_copied'
+  | 'hp_person_promoted'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

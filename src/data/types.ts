@@ -385,6 +385,16 @@ export interface CapturedContact {
    */
   voiceNote: { path: string; url: string; durationSec: number } | null
   followUp: { due: string; done: boolean } | null
+  /**
+   * The hp_people document this capture was folded into, once it has been.
+   * Null until then, and set by `promoteContactToPerson` rather than by hand.
+   *
+   * It exists so the promote action can be offered exactly once. A capture
+   * with no email has no dedupe key, so a second promotion would build a
+   * second person instead of merging into the first, and nothing else on the
+   * capture records that it already happened.
+   */
+  personId: string | null
   capturedAt: string
   capturedBy: string
 }
@@ -513,6 +523,19 @@ export interface Feedback {
   /** Where they were when they sent it, so a vague note is still actionable. */
   route: string
   createdAt: string
+}
+
+/**
+ * M1 standing availability. The parties on one event, without the tasks, the
+ * run of show, the crew and the directory that a bundle would also carry.
+ *
+ * Aggregating a partner's date responses means reading every event's parties,
+ * and a bundle each would be four subcollection reads per event to look at one
+ * map. This is the narrow shape that answers it.
+ */
+export interface PartyHistory {
+  eventId: string
+  parties: Party[]
 }
 
 /** Everything the event workspace needs, in one call. */

@@ -13,6 +13,7 @@ import type {
   OwnerRef,
   Feedback,
   Party,
+  PartyHistory,
   Person,
   ResponseSource,
   ResponseValue,
@@ -67,7 +68,15 @@ export interface RunItemInput {
   notes: string
 }
 
-export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy' | 'ownerUid'>
+/**
+ * `personId` is left out on purpose: the link to hp_people belongs to
+ * `promoteContactToPerson`, and a page that could set it by hand could claim a
+ * capture had been promoted when no person exists.
+ */
+export type ContactInput = Omit<
+  CapturedContact,
+  'id' | 'capturedAt' | 'capturedBy' | 'ownerUid' | 'personId'
+>
 export type AvailabilityInput = Omit<AvailabilityBlock, 'id' | 'ownerUid'>
 export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
 
@@ -143,6 +152,19 @@ export interface HostApi {
 
   // F5, parties and guest links
   addParty(eventId: string, input: PartyInput): Promise<string>
+  /**
+   * M1 standing availability. Every party on every event this host owns, for
+   * turning one partner's answers into a weekday pattern. The partner detail
+   * page and the dates tab both read it, through `src/data/standing.ts`, so
+   * the two cannot disagree about what a pattern is.
+   *
+   * Firestore cannot answer this in one query. A collection-group query over
+   * `parties` would need a collection-group rule, which is banned here because
+   * the shared ruleset would apply it to the consumer app's subcollections
+   * too. So it is one small subcollection read per event, which is still far
+   * less than a bundle each and needs no index.
+   */
+  listPartyHistory(): Promise<PartyHistory[]>
   updateParty(eventId: string, partyId: string, patch: Partial<Party>): Promise<void>
   removeParty(eventId: string, partyId: string): Promise<void>
   logNudge(eventId: string, partyId: string): Promise<void>
@@ -208,7 +230,13 @@ export interface HostApi {
     eventKey: string,
     uid: string,
   ): Promise<ImportSummary>
-  /** Turns a captured contact into a person, merging by email when there is one. */
+  /**
+   * Turns a captured contact into a person, merging by email when there is
+   * one, and stamps the new person's id back onto the capture as `personId`.
+   * That link is what lets a page offer the action exactly once: without an
+   * email there is no dedupe key, so a second promotion would build a second
+   * person rather than merging into the first.
+   */
   promoteContactToPerson(contactId: string, uid: string): Promise<string>
 
   // Step 4, tester feedback. One write, no read: the smallest thing that lets

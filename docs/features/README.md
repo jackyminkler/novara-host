@@ -13,6 +13,9 @@ runners. Write the "What it does" section for them.
 - [`recap-and-roi.md`](recap-and-roi.md) — what an event cost and what it returned:
   deliverables both directions, the spend log, show rate by source, per party outcomes, and
   the site lessons loop with its permit and date warnings.
+- [`guest-crm.md`](guest-crm.md) — the two lists and everything that moves between them:
+  captures as the fast inbox, people as the durable list, the shared import pipeline, segments
+  and export, the follow-up hub, promotion, and the `appUserUid` identity link.
 
 ## Owed
 
@@ -24,7 +27,6 @@ them:
   functions, and every guest-facing route.
 - **Events and run-of-show** — the subcollections (`parties`, `tasks`, `runOfShow`) that are
   deliberately **not** `hp_`-prefixed, which is why a collection-group rule is banned.
-- **Guest CRM** — `hp_contacts`, `hp_people`, and where they surface.
 - **Host onboarding** — open Google sign-in and per-document `ownerUid` isolation, which
   superseded the allowlist gate on 2026-08-25.
 

@@ -116,7 +116,12 @@ function normalizeTemplate(template: Template): Template {
 }
 
 function normalizeContact(contact: CapturedContact): CapturedContact {
-  return { ...contact, quote: contact.quote ?? '', voiceNote: contact.voiceNote ?? null }
+  return {
+    ...contact,
+    quote: contact.quote ?? '',
+    voiceNote: contact.voiceNote ?? null,
+    personId: contact.personId ?? null,
+  }
 }
 
 /**
@@ -426,6 +431,21 @@ export const firebaseApi: HostApi = {
     return ref.id
   },
 
+  async listPartyHistory() {
+    // One events query plus one parties read per event. A bundle each would
+    // pull tasks, run of show, crew and the whole directory to look at one
+    // response map, and a collection-group query over `parties` is banned:
+    // the shared ruleset would need a collection-group rule, which would span
+    // the consumer app's subcollections too.
+    const events = await readOwned<EventDoc>(EVENTS)
+    return Promise.all(
+      events.map(async (event) => ({
+        eventId: event.id,
+        parties: (await readAll<Party>(sub(event.id, 'parties'))).map(normalizeParty),
+      })),
+    )
+  },
+
   async updateParty(eventId, partyId, patch) {
     await updateDoc(doc(sub(eventId, 'parties'), partyId), patch)
   },
@@ -552,6 +572,9 @@ export const firebaseApi: HostApi = {
   async createContact(input: ContactInput, uid: string) {
     const ref = await addDoc(collection(db, CONTACTS), {
       ...input,
+      // Nothing has been promoted at the moment of capture, and the link is
+      // the implementation's to set.
+      personId: null,
       capturedAt: now(),
       capturedBy: uid,
       ownerUid: uid,
@@ -747,8 +770,8 @@ export const firebaseApi: HostApi = {
     const contact = normalizeContact(withId<CapturedContact>(snap))
 
     // No email means no dedupe key, so this always creates. Two promotions of
-    // the same handshake would make two people, which the page prevents by
-    // only offering the action once.
+    // the same handshake would make two people, which the `personId` written
+    // back onto the capture below is what prevents.
     const email = normalizeEmail(contact.handles.email ?? '')
     const mine = email ? await readOwned<Person>(PEOPLE) : []
     const existing = email ? mine.find((p) => p.email === email) ?? null : null
@@ -756,7 +779,11 @@ export const firebaseApi: HostApi = {
 
     const { id: _id, ...body } = merged as PersonDoc & { id?: string }
     const ref = existing ? doc(db, PEOPLE, existing.id) : doc(collection(db, PEOPLE))
+    // The person is written first. A capture pointing at a person who does not
+    // exist is broken; a person nobody points at is merely untidy, and the
+    // next promotion of the same capture would merge into them by email.
     await setDoc(ref, { ...body, ownerUid: uid })
+    await updateDoc(doc(db, CONTACTS, contactId), { personId: ref.id })
     return ref.id
   },
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, X } from 'lucide-react'
+import { Plus, Upload, X } from 'lucide-react'
 import { Card, Chip, Eyebrow, KV, OutlineButton, QuietButton, Sub, cx } from '../../ui/primitives'
 import { Field, Input, InlineText, Select } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
+import ImportGuestsDialog from '../people/ImportGuestsDialog'
 import { useEvent } from './EventContext'
 import { useHost } from '../AuthProvider'
 import { useAsync, useMutation } from '../useApi'
@@ -30,10 +31,11 @@ const PARTY_STATUS = {
 }
 
 export default function OverviewTab() {
-  const { bundle, run, hostName } = useEvent()
+  const { bundle, reload, run, hostName } = useEvent()
   const { event, parties, orgs, tasks, crew } = bundle
   const [addingLink, setAddingLink] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
+  const [importingGuests, setImportingGuests] = useState(false)
 
   const eventId = event.id
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
@@ -160,6 +162,24 @@ export default function OverviewTab() {
               onCommit={(v) => setGovernance('dualPosts', v)}
             />
           </KV>
+        </Card>
+
+        <Card>
+          <Eyebrow className="mb-[5px]">Guest list</Eyebrow>
+          {event.sourceKey ? (
+            <KV label="Stored under">{event.sourceKey}</KV>
+          ) : (
+            <p className="text-[12.5px] text-mut">
+              Nothing imported yet. Bring the signup export in and everyone on it stays findable
+              long after the day, with their answers attached.
+            </p>
+          )}
+          <div className="mt-2">
+            <OutlineButton onClick={() => setImportingGuests(true)}>
+              <Upload size={13} />
+              Import guests
+            </OutlineButton>
+          </div>
         </Card>
       </div>
 
@@ -331,6 +351,15 @@ export default function OverviewTab() {
           eventId={eventId}
           eventTitle={event.title}
           onClose={() => setSavingTemplate(false)}
+        />
+      )}
+
+      {importingGuests && (
+        <ImportGuestsDialog
+          event={event}
+          events={allEvents ?? []}
+          onClose={() => setImportingGuests(false)}
+          onImported={reload}
         />
       )}
     </div>

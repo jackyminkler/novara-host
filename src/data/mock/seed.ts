@@ -124,6 +124,38 @@ function registration(
   }
 }
 
+/**
+ * Someone who got here by being met rather than by signing up: no email, no
+ * registrations, tagged so where they came from stays readable. This is what
+ * `personFromContact` produces, and `ct-priya` is the capture that produced it.
+ */
+const PROMOTED_FROM_CAPTURE: Person = {
+  id: 'person-priya',
+  ownerUid: HOST,
+  email: '',
+  firstName: 'Priya',
+  lastName: 'Shah',
+  fullName: 'Priya Shah',
+  phone: '415 555 0113',
+  handles: { instagram: '@priya.runs', linkedin: 'linkedin.com/in/priyashah' },
+  appUserUid: null,
+  // No registration anywhere, so there is nothing for the tier rules to read.
+  // Invited is the least wrong of the three, and the first real export that
+  // carries her corrects it.
+  tier: 'invited_only',
+  eventCount: 0,
+  firstSeenAt: '2026-07-16T20:10:00.000Z',
+  lastSeenAt: '2026-07-16T20:10:00.000Z',
+  sources: ['capture'],
+  referredBy: [],
+  notes: "Runs sub 8s, wants in on the next sunrise five. Knows a mural artist who does event banners. Ask about her club's Thursday crew.",
+  // The capture still holds the open follow-up. Two rows for one handshake
+  // would read as two things owed.
+  followUp: null,
+  tags: ['met in person'],
+  registrations: [],
+}
+
 function buildPeople(): Person[] {
   const names = [
     'Ada Okafor', 'Bo Lindqvist', 'Cara Mendes', 'Dev Raman', 'Elle Fontaine',
@@ -243,7 +275,19 @@ export function buildStore(): MockStore {
       'Event community company running clubs across the bay',
       [{ name: 'Nia Barros', role: 'Programs', email: 'nia@commonground.co' }],
       { audience: 'Their Thursday run list, around 400', split: 'They bring people, we bring production' },
-      { via: 'Met at a city run series', relationshipTerms: 'Even split, no money changes hands' },
+      {
+        via: 'Met at a city run series',
+        relationshipTerms: 'Even split, no money changes hands',
+        standing: [
+          {
+            id: 'st-common-1',
+            kind: 'blackout',
+            text: 'Their own season closer takes the whole of that week.',
+            startDate: '2026-12-07',
+            endDate: '2026-12-13',
+          },
+        ],
+      },
     ),
     org(
       'loopwork-ai',
@@ -385,7 +429,15 @@ export function buildStore(): MockStore {
     status: 'wrapped',
     description:
       'An evening track session and social hour with a coffee cart and a short wellness demo.',
-    dateOptions: [{ id: 'm-opt-a', startsAt: '2026-07-16T18:30:00', label: '' }],
+    // Three options went out and one was confirmed. The two that lost are kept
+    // rather than tidied away: the answers against them are the only history a
+    // partner's weekday pattern can be read from, and a confirmed event shows
+    // its banner rather than its matrix, so nothing renders them twice.
+    dateOptions: [
+      { id: 'm-opt-a', startsAt: '2026-07-16T18:30:00', label: '' },
+      { id: 'm-opt-b', startsAt: '2026-07-11T18:30:00', label: '' },
+      { id: 'm-opt-c', startsAt: '2026-07-18T18:30:00', label: '' },
+    ],
     confirmedDateOptionId: 'm-opt-a',
     location: {
       name: 'Marina Green track',
@@ -576,7 +628,13 @@ export function buildStore(): MockStore {
         terms: { gives: 'Testing station, staff of two', gets: 'Station by the tables, welcome mention' },
         goal: '30 tests completed',
         cta: 'Book a testing slot',
-        dateResponses: { 'm-opt-a': answered('yes') },
+        // Two Saturdays turned down here and a third on the Presidio run is
+        // what the weekday pattern reads: their field team works weekends.
+        dateResponses: {
+          'm-opt-a': answered('yes'),
+          'm-opt-b': answered('no'),
+          'm-opt-c': answered('no'),
+        },
         constraintNote: '',
         tokenId: 'tok-alma-marina',
         nudgeCount: 0,
@@ -601,7 +659,7 @@ export function buildStore(): MockStore {
         terms: { gives: 'Cart for two hours', gets: 'Event rate paid' },
         goal: 'Serve 100 drinks',
         cta: 'Grab a coffee',
-        dateResponses: { 'm-opt-a': answered('yes') },
+        dateResponses: { 'm-opt-a': answered('yes'), 'm-opt-b': answered('maybe') },
         constraintNote: '',
         tokenId: 'tok-wolf-marina',
         nudgeCount: 0,
@@ -741,6 +799,10 @@ export function buildStore(): MockStore {
     },
   ]
 
+  // Captures are the fast inbox. One of these has already been folded into the
+  // people list, which is why it carries a personId and the other two do not:
+  // the promote action is offered exactly once, and for a capture with no
+  // email that link is the only thing recording that it happened.
   const contacts: CapturedContact[] = [
     {
       id: 'ct-priya',
@@ -754,6 +816,7 @@ export function buildStore(): MockStore {
       // player that cannot play anything.
       voiceNote: null,
       followUp: { due: '2026-08-19', done: false },
+      personId: 'person-priya',
       capturedAt: '2026-07-16T20:10:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -767,6 +830,7 @@ export function buildStore(): MockStore {
       quote: '',
       voiceNote: null,
       followUp: { due: '2026-08-21', done: false },
+      personId: null,
       capturedAt: '2026-07-16T20:25:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -780,6 +844,7 @@ export function buildStore(): MockStore {
       quote: '',
       voiceNote: null,
       followUp: { due: '2026-07-18', done: true },
+      personId: null,
       capturedAt: '2026-07-16T20:40:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -887,7 +952,7 @@ export function buildStore(): MockStore {
     availability,
     moments,
     tokens,
-    people: buildPeople(),
+    people: [...buildPeople(), PROMOTED_FROM_CAPTURE],
     feedback: [],
     profiles,
   }

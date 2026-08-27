@@ -46,12 +46,16 @@ import { mergeRows, normalizeEmail, personFromContact } from '../people/merge'
 // Writes persist to localStorage so a refresh keeps the demo state; clearing
 // the key resets to the fixture.
 
-// Bumped to v2 for the M1 fields. The version is in the key rather than inside
-// the value on purpose: a browser holding a v1 store has no template matching
-// config, no deliverables and no spend log, and the fixtures are the whole
+// Bumped whenever the fixture grows a field the UI now reads. The version is
+// in the key rather than inside the value on purpose: a browser holding an
+// older store has none of the newer fixtures, and the fixtures are the whole
 // point of mock mode. A new key means the next load rebuilds from seed instead
 // of rendering a demo with half its data missing.
-const STORAGE_KEY = 'novara-hosts-mock-v2'
+//
+// v2 added the M1 fields: template matching, deliverables, spend log. v3 adds
+// the CRM ones: promoted captures, the standing-availability history, and the
+// follow-ups the hub reads.
+const STORAGE_KEY = 'novara-hosts-mock-v3'
 
 function load(): MockStore {
   try {
@@ -410,6 +414,14 @@ export const mockApi: HostApi = {
     return ok(party.id)
   },
 
+  listPartyHistory: () =>
+    ok(
+      owned(store.events).map((event) => ({
+        eventId: event.id,
+        parties: [...listOf(store.parties, event.id)].sort((a, b) => a.order - b.order),
+      })),
+    ),
+
   updateParty: (eventId, partyId, patch) => {
     const party = listOf(store.parties, eventId).find((p) => p.id === partyId)
     if (party) Object.assign(party, clone(patch))
@@ -548,6 +560,9 @@ export const mockApi: HostApi = {
     const contact = {
       ...clone(input),
       id: id('ct'),
+      // Nothing has been promoted at the moment of capture, and the link is
+      // the implementation's to set.
+      personId: null,
       capturedAt: new Date().toISOString(),
       capturedBy: uid,
       ownerUid: uid,
@@ -720,8 +735,8 @@ export const mockApi: HostApi = {
     if (!contact) throw new Error('contact_not_found')
 
     // No email means no dedupe key, so this always creates. Two promotions of
-    // the same handshake would make two people, which the page prevents by
-    // only offering the action once.
+    // the same handshake would make two people, which the `personId` stamped
+    // back onto the capture below is what prevents.
     const email = normalizeEmail(contact.handles.email ?? '')
     const existing = email
       ? store.people.find((p) => p.ownerUid === uid && p.email === email) ?? null
@@ -730,11 +745,13 @@ export const mockApi: HostApi = {
 
     if (existing) {
       Object.assign(existing, clone(merged), { id: existing.id })
+      contact.personId = existing.id
       persist()
       return ok(existing.id)
     }
     const person: Person = { ...clone(merged), id: id('per') }
     store.people.push(person)
+    contact.personId = person.id
     persist()
     return ok(person.id)
   },

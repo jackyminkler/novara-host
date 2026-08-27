@@ -67,3 +67,17 @@ export function parseCsvRecords(text: string): { headers: string[]; rows: CsvRow
 
   return { headers, rows }
 }
+
+/**
+ * The other direction, for CRM-2's export. Quotes a cell only when it needs
+ * it, which keeps a hand-read file readable, and doubles any quote inside so
+ * `parseCsv` above reads back exactly what went in.
+ *
+ * Line endings are CRLF because that is what RFC 4180 says and what a
+ * spreadsheet on Windows expects; the parser accepts either.
+ */
+export function toCsv(headers: string[], rows: string[][]): string {
+  const cell = (value: string): string =>
+    /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+  return [headers, ...rows].map((row) => row.map(cell).join(',')).join('\r\n')
+}

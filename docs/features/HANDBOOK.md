@@ -14,6 +14,87 @@ hire, or a support answer. No file paths, no collection names.
 
 ---
 
+## Guest CRM
+
+**Built, unreleased**
+
+### What it does
+
+Two lists, on purpose, because they answer different questions.
+
+**Captures** are the fast inbox. You met someone at an event, you have ten seconds, and you
+type a first name and why you want to remember them. The form defaults to the event you are
+running and sets a reminder for two days out unless you say otherwise. That is the whole
+interaction. A capture is a note to yourself, and it is allowed to be scrappy: no email, no
+last name, one line about a mural artist she knows.
+
+**People** is the durable list. It fills from the guest exports your listing page produces, so
+it holds everyone who signed up for anything, was invited to anything, or turned something
+down, along with what they answered on the signup form. You never type into it. It is history,
+and it is the list that answers "who has come twice", "who came but never joined the app", and
+"who brought other people".
+
+**Where to find them.** Capture and People, both in the sidebar.
+
+**Bringing a guest list in.** "Import guests" sits on the people page and on an event's
+overview. Paste the CSV your listing page gave you, or pick the file. Before anything is
+written you see exactly what will change: how many people are new, how many get updated, how
+many are already exactly as the file says, and the first few rows so you can tell at a glance
+that the right file went in. Then you import.
+
+Every list is stored under an event key, a short dated slug like `2026-09-12-sunrise-run`. When
+you import from an event that has no key yet, one is suggested from the event's date and title
+and saved onto the event, so the next import of the same list and the event's own recap both
+land on the same slug without you retyping it. Keeping a key stable is what lets the same
+person be recognised as the same person across four events instead of appearing four times.
+
+Importing the same file twice changes nothing, and it says so: everything reports as unchanged.
+A corrected export re-imported replaces that event's entry rather than adding a second one. And
+an import never touches what you wrote: your notes, your tags, and your follow-ups on a person
+survive every import, because those are yours and the rest is theirs.
+
+Rows with no email address are skipped, and the preview says how many. Email is how the same
+person is matched across events, so a row without one has nothing to match on. A file with no
+email column at all is refused with an explanation rather than half imported.
+
+**Segments and export.** The people page has five saved segments across the top: came twice or
+more, came but not in the app yet, invited and never came, said yes to a waitlist question, and
+brought someone. Under them are search, status, event, tag and sort. "Export CSV" downloads
+exactly what is on screen after all of that, with names, emails, phones, status, event count,
+last seen and tags. What the screen shows is what the file holds: an export that quietly
+carried more than you were looking at would be a nasty surprise. Your private notes are never
+in it.
+
+**Follow-ups.** The capture page carries one follow-up list covering both sides: the handshake
+you have not answered yet and the person on your guest list you meant to write to. Open ones
+first, soonest due at the top, each saying where it came from. Tick one off, or reopen it if
+you ticked it by mistake.
+
+Every row offers the same default action, "Invite to next event". It copies one short line, the
+next event with a confirmed date, where it is, when it is, and the official listing link if one
+is recorded, ready to paste into whatever you already talk to that person in. The tool holds
+the decision and writes the line. Sending it is still yours. When nothing has a confirmed date
+yet, the action says so instead of copying something wrong.
+
+**Turning a capture into a person.** A capture you want to keep gets "Add to people" on its
+detail, which folds it into the durable list: the name, the handles, the note underneath
+anything already there, and a "met in person" tag so you can find everyone you met this way.
+Someone already on the list, matched by email, is merged rather than duplicated. Afterwards the
+capture says "View in people" instead, which is the whole guard: a capture with no email has
+nothing to match on, so offering the action twice would quietly make two of the same person.
+
+Someone promoted this way shows as invited rather than signed up. They are on your list without
+having registered for anything, which is true, and it corrects itself the first time a real
+guest export carries them.
+
+**People and app accounts.** A person on your list can be linked to a Novara app account, and
+the page says whether they are. It is a link, not a copy. Their account is theirs and lives in
+the app. Your notes about them are yours and stay here.
+
+---
+
+---
+
 ## Recap and ROI
 
 **Built, unreleased**

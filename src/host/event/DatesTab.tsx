@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check, Plus, X } from 'lucide-react'
 import { Button, Card, Chip, Eyebrow, GhostButton, QuietButton, Sub, SubTitle, cx } from '../../ui/primitives'
 import { Input } from '../../ui/form'
@@ -7,12 +7,20 @@ import { useAsync } from '../useApi'
 import { useEvent } from './EventContext'
 import type { DateOption, Party, ResponseValue } from '../../data/types'
 import { awayConflict, formatDayOnly, formatLong, formatTime, holidayOn } from '../../lib/dates'
+import {
+  standingWarnings, weekdayPatterns, type StandingSubject, type StandingWarning,
+} from '../../data/standing'
 import { dateClashes } from './siteChecks'
 import { track } from '../../lib/analytics'
 
 // The hero screen. Parties by options, response chips, and a constraint note.
 // Confirming collapses the matrix into a banner and updates every guest view
 // without republishing a single link.
+//
+// M1 adds two quiet marks per option, both from `src/data/standing.ts` so the
+// partner detail page and this one cannot disagree: a blackout the partner
+// told you about, and a weekday they have turned down more than once without
+// ever accepting. Neither blocks anything.
 
 let optionSeq = 0
 const nextOptionId = () => `opt-${Date.now().toString(36)}-${(optionSeq += 1)}`
@@ -51,9 +59,26 @@ export default function DatesTab() {
   const { data: availability } = useAsync((api) => api.listAvailability(), [])
   // The host's other events, for the same-day warning the overview also shows.
   const { data: allEvents } = useAsync((api) => api.listEvents(), [])
+  // Every party on every event, for the weekday pattern. One small read per
+  // event, and nothing here breaks while it is still loading.
+  const { data: partyHistory } = useAsync((api) => api.listPartyHistory(), [])
 
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
   const clashes = dateClashes(event, allEvents ?? [])
+
+  const patterns = useMemo(
+    () => weekdayPatterns(allEvents ?? [], partyHistory ?? []),
+    [allEvents, partyHistory],
+  )
+
+  const subjects = useMemo<StandingSubject[]>(
+    () =>
+      parties.flatMap((party) => {
+        const org = orgs.find((o) => o.id === party.orgId)
+        return org ? [{ orgId: org.id, orgName: org.name, standing: org.standing ?? [] }] : []
+      }),
+    [parties, orgs],
+  )
 
   const addOption = () => {
     if (!draft || event.dateOptions.length >= 5) return
@@ -153,6 +178,7 @@ export default function DatesTab() {
                   option={option}
                   availability={availability ?? []}
                   sharedWith={clashes.filter((c) => c.optionId === option.id).map((c) => c.title)}
+                  standing={standingWarnings(option, subjects, patterns)}
                   onRemove={() => removeOption(option.id)}
                   className={index === event.dateOptions.length - 1 ? 'pr-[18px]' : undefined}
                 />
@@ -374,6 +400,7 @@ function OptionHead({
   option,
   availability,
   sharedWith,
+  standing,
   onRemove,
   className,
 }: {
@@ -381,6 +408,8 @@ function OptionHead({
   availability: { kind: 'away' | 'open'; startDate: string; endDate: string; label: string }[]
   /** Titles of the host's other events landing on this same day. */
   sharedWith: string[]
+  /** What the partners' own calendars say about this day. */
+  standing: StandingWarning[]
   onRemove: () => void
   className?: string
 }) {
@@ -402,6 +431,24 @@ function OptionHead({
           Shared with {title}
         </Chip>
       ))}
+      {standing
+        .filter((warning) => warning.kind === 'blackout')
+        .map((warning) => (
+          <Chip
+            key={warning.orgId}
+            tone="warn"
+            className="mt-1 !whitespace-normal !px-[6px] !text-[10px]"
+          >
+            {warning.text}
+          </Chip>
+        ))}
+      {standing
+        .filter((warning) => warning.kind === 'pattern')
+        .map((warning) => (
+          <span key={warning.orgId} className="mt-1 block text-[10px] leading-tight text-mut">
+            {warning.text}
+          </span>
+        ))}
       <button
         type="button"
         onClick={onRemove}

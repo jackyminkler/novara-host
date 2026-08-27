@@ -60,6 +60,16 @@ export function formatDayOnly(iso: string): string {
   return `${WEEKDAY[d.getDay()]} ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`
 }
 
+/**
+ * "Saturday September 12", spelled out and without a time. The form you would
+ * type into a message, which is exactly where the copied invite line goes.
+ */
+export function formatDayLong(iso: string): string {
+  const d = new Date(iso)
+  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]
+  return `${weekday} ${MONTH[d.getMonth()]} ${d.getDate()}`
+}
+
 /** "06:30" reads as "6:30". Stored 24 hour, displayed the way people speak. */
 export function formatClock(time: string): string {
   return time.replace(/^0/, '')
