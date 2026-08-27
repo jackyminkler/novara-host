@@ -303,6 +303,9 @@ function QuickAdd({
           },
           eventId: eventId || null,
           note: note.trim(),
+          // M1 fields, empty until the quote field and the recorder land.
+          quote: '',
+          voiceNote: null,
           followUp: followUp ? { due: toDateKey(addDays(new Date(), 2)), done: false } : null,
         },
         host.uid,

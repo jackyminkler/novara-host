@@ -13,6 +13,12 @@ function build(token: string): GuestView {
   const record = store.tokens.find((t) => t.id === token)
   if (!record || record.revoked) throw new GuestError('invalid')
 
+  // A card token carries no event, and its view is a different page entirely.
+  // Rejected here until that page exists, so a card link never renders an
+  // event view with every field blank.
+  const scope = record.scope
+  if (scope === 'card') throw new GuestError('invalid')
+
   const event = store.events.find((e) => e.id === record.eventId)
   if (!event) throw new GuestError('invalid')
 
@@ -32,7 +38,7 @@ function build(token: string): GuestView {
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
 
   const view: GuestView = {
-    scope: record.scope,
+    scope,
     event: {
       title: event.title,
       description: event.description,
@@ -99,8 +105,9 @@ export function mockGuestSubmit(
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
   if (!record || record.revoked) throw new GuestError('invalid')
-  // A recap link is read only, exactly as the real function enforces.
-  if (record.scope === 'recap') throw new GuestError('invalid')
+  // A recap link is read only, exactly as the real function enforces, and a
+  // card link has no event to act on.
+  if (record.scope === 'recap' || record.scope === 'card') throw new GuestError('invalid')
 
   const parties = store.parties[record.eventId] ?? []
   const party = parties.find((p) => p.id === record.subjectId)

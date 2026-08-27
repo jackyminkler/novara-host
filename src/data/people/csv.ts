@@ -1,9 +1,14 @@
 /**
  * RFC 4180 CSV reader.
  *
- * Not optional here: the Aug 22 girls-run export has column *names* containing
- * commas and newlines (a question wraps across two lines inside its quotes), so
+ * Not optional here: a Luma export can have column *names* containing commas
+ * and newlines (a question wrapping across two lines inside its quotes), so
  * splitting on commas corrupts both the header and every row after it.
+ *
+ * Lives under src so the seed importer and the in-app importer parse the same
+ * way. It was `seed/csv.ts` first; two copies of a parser this fussy would
+ * disagree the first time one of them was fixed. Pure, no imports at all, so
+ * the seed scripts can load it directly under Node's type stripping.
  */
 
 /** Parse a whole CSV into rows of raw cells. Handles "" escapes and quoted newlines. */

@@ -5,7 +5,9 @@ import type {
   CrewMember,
   EventDoc,
   GuestToken,
+  HostCard,
   LogEntry,
+  MatchingRun,
   Org,
   Party,
   RunItem,
@@ -29,6 +31,8 @@ export interface MockStore {
   runOfShow: Record<string, RunItem[]>
   crew: Record<string, CrewMember[]>
   log: Record<string, LogEntry[]>
+  /** M1. One list per event, mirroring the hp_events/{id}/matching subcollection. */
+  matching: Record<string, MatchingRun[]>
   templates: Template[]
   contacts: CapturedContact[]
   availability: AvailabilityBlock[]
@@ -36,6 +40,8 @@ export interface MockStore {
   tokens: GuestToken[]
   people: Person[]
   feedback: Feedback[]
+  /** M1. The hp_profiles collection: one share card per host, keyed by uid. */
+  profiles: HostCard[]
 }
 
 const HOST = 'mock-host-uid'
@@ -61,6 +67,8 @@ function org(
     via: '',
     relationshipTerms: '',
     notes: '',
+    siteProfile: null,
+    standing: [],
     createdAt: NOW,
     createdBy: HOST,
     ownerUid: HOST,
@@ -210,6 +218,22 @@ export function buildStore(): MockStore {
           'Founding partner, covers most event costs, everything informal and in good standing',
         notes:
           'Field team travels the last week of every month. Needs three weeks of lead time for station staffing.',
+        standing: [
+          {
+            id: 'st-alma-1',
+            kind: 'blackout',
+            text: 'Field team travels the last week of every month.',
+            startDate: '2026-08-24',
+            endDate: '2026-08-31',
+          },
+          {
+            id: 'st-alma-2',
+            kind: 'window',
+            text: 'Tuesday and Thursday mornings suit their staffing best.',
+            startDate: null,
+            endDate: null,
+          },
+        ],
       },
     ),
     org(
@@ -251,6 +275,45 @@ export function buildStore(): MockStore {
         relationshipTerms: 'Free for our events, would charge others market rate',
       },
     ),
+    org(
+      'main-post-lawn',
+      'Main Post Lawn',
+      'venue',
+      'Open lawn with a paved edge, no power',
+      [{ name: 'Site office', role: 'Permits', email: 'events@mainpostlawn.example' }],
+      { capacity: 'Comfortable to about 150 on the lawn', permits: 'Two weeks lead time, sound rules after 9' },
+      {
+        via: 'Walked it on a Sunday and asked',
+        notes: 'Site office answers slowly. Ask early, ask twice.',
+        siteProfile: {
+          lessons: [
+            {
+              id: 'sl1',
+              text: 'Wind picks up hard after 9, so the banner needs weights, not stakes.',
+              eventId: 'marina-track-social',
+              at: '2026-07-17T09:00:00.000Z',
+            },
+            {
+              id: 'sl2',
+              text: 'No outlets anywhere on the lawn. The cart and the DJ both run off the generator.',
+              eventId: null,
+              at: '2026-06-02T09:00:00.000Z',
+            },
+          ],
+          permitThresholds: { amplifiedSound: true, headcountAbove: 100 },
+          notes: 'Trash goes out with you. There is no bin near the flagpole.',
+        },
+        standing: [
+          {
+            id: 'st-lawn-1',
+            kind: 'window',
+            text: 'Mornings before 10 are usually free. Afternoons book up months out.',
+            startDate: null,
+            endDate: null,
+          },
+        ],
+      },
+    ),
   ]
 
   const presidio: EventDoc = {
@@ -288,6 +351,23 @@ export function buildStore(): MockStore {
     },
     signupCount: 61,
     recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
+    spendLog: [
+      { id: 'sp1', label: 'Coffee cart, event rate', amount: 250, kind: 'cash', partyId: 'p-wolf' },
+      { id: 'sp2', label: 'Generator rental for the day', amount: 120, kind: 'cash', partyId: null },
+      { id: 'sp3', label: 'Coffee beans covered by the sponsor', amount: 300, kind: 'inkind', partyId: 'p-loopwork' },
+      { id: 'sp4', label: 'DJ set, friend rate', amount: 500, kind: 'inkind', partyId: 'p-golden' },
+    ],
+    talkTracks: [
+      'Ask what got them out of bed this early. It is a better opener than what they do.',
+      'The station at the finish is free and takes ten minutes. Say so before the run, not after.',
+      'Loopwork are hiring. If someone is looking, walk them over rather than pointing.',
+    ],
+    shotList: [
+      { id: 'sh1', description: 'Wide shot of the group at the flagpole before the start', owner: 'host', done: false },
+      { id: 'sh2', description: 'Coffee cart with a queue, from the lawn side', owner: 'party:p-wolf', done: false },
+      { id: 'sh3', description: 'Station in use, faces only with a yes', owner: 'party:p-alma', done: false },
+      { id: 'sh4', description: 'Two runners talking at the finish, backs to the sun', owner: 'crew:c-brad', done: false },
+    ],
     templateId: 'tpl-dj-morning',
     hostUid: HOST,
     hostDisplayName: 'Maya',
@@ -327,6 +407,15 @@ export function buildStore(): MockStore {
       postsRan: '6 across both accounts',
       generatedAt: '2026-07-18T10:00:00.000Z',
     },
+    // The wrapped event carries a little spend too, so the recap has something
+    // real to report against. Talk tracks and the shot list were day-of tools
+    // and are left empty here on purpose: not every event uses every part.
+    spendLog: [
+      { id: 'msp1', label: 'Coffee cart, two hours', amount: 250, kind: 'cash', partyId: 'mp-wolf' },
+      { id: 'msp2', label: 'Track booking', amount: 90, kind: 'cash', partyId: null },
+    ],
+    talkTracks: [],
+    shotList: [],
     templateId: null,
     hostUid: HOST,
     hostDisplayName: 'Maya',
@@ -357,6 +446,12 @@ export function buildStore(): MockStore {
         profile: { staffing: 'Three at the station', consentOwner: 'Alma Health field team' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-alma-1', direction: 'party', title: 'Station kit and signage on site by 6:30', due: '2026-08-27', done: false },
+          { id: 'd-alma-2', direction: 'party', title: 'Consent wording sent over for the page', due: '2026-08-24', done: true },
+          { id: 'd-alma-3', direction: 'host', title: 'Flat spot at the finish, marked out the night before', due: '2026-08-26', done: false },
+          { id: 'd-alma-4', direction: 'host', title: 'Welcome mention and a link in the recap', due: null, done: false },
+        ],
         order: 0,
       },
       {
@@ -374,6 +469,10 @@ export function buildStore(): MockStore {
         profile: { audience: 'Their Thursday run list, around 400', split: 'They bring people, we bring production' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-common-1', direction: 'party', title: 'Post to the Thursday list twice, two weeks out and the night before', due: '2026-08-26', done: false },
+          { id: 'd-common-2', direction: 'host', title: 'Co-host billing on the page and the flyer', due: '2026-08-20', done: true },
+        ],
         order: 1,
       },
       {
@@ -391,6 +490,11 @@ export function buildStore(): MockStore {
         profile: { value: 'Covers the coffee bean cost, around $300', goal: 'Awareness, two hiring conversations' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-loop-1', direction: 'party', title: 'Logo file at print size', due: '2026-08-22', done: false },
+          { id: 'd-loop-2', direction: 'host', title: 'Logo on the flyer and the page', due: '2026-08-24', done: false },
+          { id: 'd-loop-3', direction: 'host', title: 'Table space near the finish', due: null, done: false },
+        ],
         order: 2,
       },
       {
@@ -408,6 +512,7 @@ export function buildStore(): MockStore {
         profile: { rate: 'Event rate $250', terms: 'Needs a flat spot and 20 amps or a generator' },
         customFields: [],
         outcomes: [],
+        deliverables: [],
         order: 3,
       },
       {
@@ -425,6 +530,10 @@ export function buildStore(): MockStore {
         profile: { rate: 'Friend rate, no charge', terms: 'Tables and generator provided by us' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-golden-1', direction: 'party', title: 'Set list length and a quiet start confirmed', due: '2026-08-21', done: true },
+          { id: 'd-golden-2', direction: 'host', title: 'Two tables and the generator, in place by 6:25', due: '2026-08-27', done: false },
+        ],
         order: 4,
       },
     ],
@@ -448,6 +557,10 @@ export function buildStore(): MockStore {
           { id: 'o2', label: 'Leads shared', value: '18, with consent' },
           { id: 'o3', label: 'Station visits', value: 'Around 60' },
         ],
+        deliverables: [
+          { id: 'd-mp-alma-1', direction: 'party', title: 'Station kit on site by 6', due: '2026-07-16', done: true },
+          { id: 'd-mp-alma-2', direction: 'host', title: 'Welcome mention and a spot by the tables', due: '2026-07-16', done: true },
+        ],
         order: 0,
       },
       {
@@ -465,6 +578,7 @@ export function buildStore(): MockStore {
         profile: {},
         customFields: [{ label: 'Cups served', value: '104' }],
         outcomes: [{ id: 'o4', label: 'Cups served', value: '104' }],
+        deliverables: [],
         order: 1,
       },
     ],
@@ -544,6 +658,11 @@ export function buildStore(): MockStore {
         { offsetMinutes: 90, title: 'Group photo', ownerSlot: 'host' },
       ],
       defaults: { capacityTarget: 80, durationMinutes: 150, startTime: '07:00' },
+      matching: {
+        mode: 'rank',
+        profileName: 'pace',
+        requiredQuestions: ['What pace do you usually run?'],
+      },
       createdFrom: 'seed',
       createdAt: NOW,
     },
@@ -574,6 +693,19 @@ export function buildStore(): MockStore {
         { offsetMinutes: 75, title: 'Coffee and open conversation', ownerSlot: 'all' },
       ],
       defaults: { capacityTarget: 50, durationMinutes: 135, startTime: '07:30' },
+      // Placeholder question wording, like every other fixture here. The real
+      // questions belong to whoever runs the event and arrive with their
+      // signup export, never from application code.
+      matching: {
+        mode: 'sparks',
+        profileName: 'mentor',
+        requiredQuestions: [
+          'What brings you out this morning?',
+          'What could you help someone else with?',
+          'What are you hoping to learn?',
+          'What pace do you plan to run?',
+        ],
+      },
       createdFrom: 'seed',
       createdAt: NOW,
     },
@@ -586,6 +718,11 @@ export function buildStore(): MockStore {
       handles: { instagram: '@priya.runs', linkedin: 'linkedin.com/in/priyashah', phone: '415 555 0113' },
       eventId: 'marina-track-social',
       note: "Runs sub 8s, wants in on the next sunrise five. Knows a mural artist who does event banners. Ask about her club's Thursday crew.",
+      quote: 'I have never met anyone at a run before. That is the part I did not expect.',
+      // Voice notes are null across the fixture. A recorded one only exists
+      // for the page that recorded it, so seeding a fake URL would render a
+      // player that cannot play anything.
+      voiceNote: null,
       followUp: { due: '2026-08-19', done: false },
       capturedAt: '2026-07-16T20:10:00.000Z',
       capturedBy: HOST,
@@ -597,6 +734,8 @@ export function buildStore(): MockStore {
       handles: { instagram: '@dannyko', email: 'danny@example.com' },
       eventId: 'marina-track-social',
       note: 'Photographer, offered to shoot the next one for tagged credit.',
+      quote: '',
+      voiceNote: null,
       followUp: { due: '2026-08-21', done: false },
       capturedAt: '2026-07-16T20:25:00.000Z',
       capturedBy: HOST,
@@ -608,6 +747,8 @@ export function buildStore(): MockStore {
       handles: { instagram: '@jordanreyes' },
       eventId: 'marina-track-social',
       note: 'Runs a Wednesday club in Oakland, open to a joint morning.',
+      quote: '',
+      voiceNote: null,
       followUp: { due: '2026-07-18', done: true },
       capturedAt: '2026-07-16T20:40:00.000Z',
       capturedBy: HOST,
@@ -624,18 +765,74 @@ export function buildStore(): MockStore {
     { id: 'mo2', ownerUid: HOST, name: 'SF Tech Week', startDate: '2026-10-05', endDate: '2026-10-11' },
   ]
 
-  const tokens: GuestToken[] = Object.entries(parties).flatMap(([eventId, list]) =>
-    list.map((p) => ({
-      id: p.tokenId as string,
+  const tokens: GuestToken[] = [
+    ...Object.entries(parties).flatMap(([eventId, list]) =>
+      list.map((p) => ({
+        id: p.tokenId as string,
+        ownerUid: HOST,
+        eventId,
+        scope: 'party' as const,
+        subjectId: p.id,
+        revoked: false,
+        createdAt: NOW,
+        lastUsedAt: null,
+      })),
+    ),
+    // The card token is the one scope with no event behind it, so eventId is
+    // empty and the subject is the host.
+    {
+      id: 'tok-card-maya',
       ownerUid: HOST,
-      eventId,
-      scope: 'party' as const,
-      subjectId: p.id,
+      eventId: '',
+      scope: 'card' as const,
+      subjectId: HOST,
       revoked: false,
       createdAt: NOW,
       lastUsedAt: null,
-    })),
-  )
+    },
+  ]
+
+  // M1. The card the host hands out, with the token the public link opens.
+  const profiles: HostCard[] = [
+    {
+      id: HOST,
+      ownerUid: HOST,
+      displayName: 'Maya',
+      headline: 'I run mornings in the city. Come to the next one.',
+      methods: {
+        instagram: '@mayaruns',
+        email: 'maya@example.com',
+        other: 'Thursday list, ask me to add you',
+      },
+      cardTokenId: 'tok-card-maya',
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+  ]
+
+  // M1. One stored run, so the tab has history the first time it opens. The
+  // results payload is whatever the engine returned, kept and not interpreted.
+  const matching: Record<string, MatchingRun[]> = {
+    'presidio-sunrise-five': [
+      {
+        id: 'mr1',
+        mode: 'rank',
+        profileName: 'pace',
+        engineVersion: 'matchcore, vendored',
+        createdAt: '2026-08-18T16:20:00.000Z',
+        peopleCount: 24,
+        matchedCount: 22,
+        results: {
+          pairs: [
+            { a: 'ada.okafor@example.com', b: 'dev.raman@example.com', score: 0.91, reasons: ['pace within 15 seconds', 'both new this season'] },
+            { a: 'bo.lindqvist@example.com', b: 'gia.petrov@example.com', score: 0.84, reasons: ['pace within 30 seconds'] },
+            { a: 'cara.mendes@example.com', b: 'hana.ishikawa@example.com', score: 0.78, reasons: ['pace within 30 seconds', 'same finish plans'] },
+          ],
+          unmatched: ['finn.oyelaran@example.com', 'ines.ferrer@example.com'],
+        },
+      },
+    ],
+    'marina-track-social': [],
+  }
 
   const log: Record<string, LogEntry[]> = {
     'presidio-sunrise-five': [],
@@ -652,6 +849,7 @@ export function buildStore(): MockStore {
     runOfShow,
     crew,
     log,
+    matching,
     templates,
     contacts,
     availability,
@@ -659,5 +857,6 @@ export function buildStore(): MockStore {
     tokens,
     people: buildPeople(),
     feedback: [],
+    profiles,
   }
 }

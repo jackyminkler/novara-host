@@ -6,6 +6,10 @@
  * changes nothing, because every write is a full recompute from the union of
  * registrations already stored plus the ones in the files given.
  *
+ * The merge itself lives in `src/data/people/merge.ts` and the parser in
+ * `src/data/people/csv.ts`, shared with the in-app importer (CRM-3). This file
+ * is the command line around them: arguments, files, totals, and the write.
+ *
  * Personal data stays data (PRD guardrail 6): every path and event key is an
  * argument, nothing about Jacky's events is hardcoded here.
  *
@@ -20,131 +24,8 @@
  */
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { parseCsvRecords, type CsvRow } from './csv.ts'
-import type { Person, PersonTier, Registration } from '../src/data/types.ts'
-
-// The columns every Luma export carries. Anything else on a row is an
-// event-specific registration question and belongs in `answers`.
-const STANDARD_COLUMNS = new Set([
-  'guest_id', 'name', 'first_name', 'last_name', 'email', 'phone_number',
-  'created_at', 'approval_status', 'checked_in_at', 'utm_source', 'referrer',
-  'referred_by', 'qr_code_url', 'amount', 'amount_tax', 'amount_discount',
-  'currency', 'coupon_code', 'eth_address', 'solana_address',
-  'survey_response_rating', 'survey_response_feedback', 'ticket_type_id', 'ticket_name',
-])
-
-// The document shape is defined once, in the app's own types, and imported
-// here. Two hand-kept copies of this shape would drift the first time a field
-// is added, and the importer is the only writer, so drift would be silent.
-export type PersonDoc = Omit<Person, 'id'>
-
-/** The dedupe key. Everything downstream assumes email is already through this. */
-export const normalizeEmail = (raw: string): string => raw.trim().toLowerCase()
-
-const uniq = (values: (string | null | undefined)[]): string[] =>
-  [...new Set(values.map((v) => (v ?? '').trim()).filter(Boolean))]
-
-/**
- * Tier is precedence, not recency: approved anywhere wins over invited
- * anywhere, which wins over declined. Someone who declined one run and came to
- * another is signed_up, and declined_only means never approved for anything.
- */
-export function tierFrom(registrations: Registration[]): PersonTier {
-  if (registrations.some((r) => r.status === 'approved')) return 'signed_up'
-  if (registrations.some((r) => r.status === 'invited')) return 'invited_only'
-  return 'declined_only'
-}
-
-function registrationFrom(row: CsvRow, eventKey: string, lumaEventId: string | null): Registration {
-  const answers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(row)) {
-    if (!STANDARD_COLUMNS.has(key) && value) answers[key] = value
-  }
-  const rating = Number.parseInt(row.survey_response_rating ?? '', 10)
-  return {
-    eventKey,
-    lumaEventId,
-    status: (row.approval_status || 'invited') as Registration['status'],
-    registeredAt: row.created_at || '',
-    checkedInAt: row.checked_in_at || null,
-    // utm_source is the campaign tag, referrer the Luma surface. Either can be
-    // the only one present, so take whichever the row actually carries.
-    source: row.utm_source || row.referrer || null,
-    surveyRating: Number.isFinite(rating) ? rating : null,
-    surveyFeedback: row.survey_response_feedback || null,
-    answers,
-  }
-}
-
-/** Lift a LinkedIn registration answer up to handles, where the app looks for it. */
-function linkedinFrom(answers: Record<string, string>): string | undefined {
-  const key = Object.keys(answers).find((k) => /linkedin/i.test(k))
-  return key ? answers[key] : undefined
-}
-
-function blankPerson(ownerUid: string, email: string): PersonDoc {
-  return {
-    ownerUid, email,
-    firstName: '', lastName: '', fullName: '',
-    phone: null, handles: {}, appUserUid: null,
-    tier: 'declined_only', eventCount: 0,
-    firstSeenAt: '', lastSeenAt: '',
-    sources: [], referredBy: [],
-    notes: '', followUp: null, tags: [],
-    registrations: [],
-  }
-}
-
-/**
- * Fold one export row into a person. Host-written fields (notes, followUp,
- * tags, appUserUid) are never touched: an import must not clear what the host
- * typed. Everything else is derived and recomputed in full.
- */
-export function applyRow(
-  people: Map<string, PersonDoc>,
-  row: CsvRow,
-  eventKey: string,
-  lumaEventId: string | null,
-  ownerUid: string,
-): 'created' | 'updated' {
-  const email = normalizeEmail(row.email ?? '')
-  if (!email) throw new Error(`row for "${row.name}" has no email, which is the dedupe key`)
-
-  const existing = people.get(email)
-  const person = existing ?? blankPerson(ownerUid, email)
-  const outcome = existing ? 'updated' : 'created'
-
-  const registration = registrationFrom(row, eventKey, lumaEventId)
-  // Replace the entry for this event rather than appending, so a re-import of
-  // a corrected export updates in place instead of duplicating the event.
-  const others = person.registrations.filter((r) => r.eventKey !== eventKey)
-  person.registrations = [...others, registration].sort((a, b) =>
-    a.registeredAt.localeCompare(b.registeredAt),
-  )
-
-  // Latest export wins on identity, since names get corrected between events.
-  person.firstName = row.first_name || person.firstName
-  person.lastName = row.last_name || person.lastName
-  person.fullName = row.name || person.fullName
-  person.phone = row.phone_number || person.phone
-
-  const linkedin = linkedinFrom(registration.answers)
-  if (linkedin) person.handles = { ...person.handles, linkedin }
-
-  person.sources = uniq([...person.sources, row.utm_source, row.referrer])
-  person.referredBy = uniq([...person.referredBy, row.referred_by])
-
-  const stamps = person.registrations.map((r) => r.registeredAt).filter(Boolean).sort()
-  person.firstSeenAt = stamps[0] ?? ''
-  person.lastSeenAt = stamps[stamps.length - 1] ?? ''
-
-  person.tier = tierFrom(person.registrations)
-  person.eventCount = person.registrations.filter((r) => r.status === 'approved').length
-  person.ownerUid = ownerUid
-
-  people.set(email, person)
-  return outcome
-}
+import { parseCsvRecords } from '../src/data/people/csv.ts'
+import { applyRow, type PersonDoc } from '../src/data/people/merge.ts'
 
 // ---------------------------------------------------------------- CLI
 
@@ -219,9 +100,9 @@ async function main() {
   console.log(`\nWrote ${written} people to hp_people.`)
 }
 
-// Only run the CLI when this file is the entry point. The pure functions above
-// are importable on their own, which is how the merge gets checked without
-// firing an import as a side effect of reading the module.
+// Only run the CLI when this file is the entry point, so importing this module
+// never fires an import as a side effect of being read. The merge functions it
+// calls live in src/data/people/merge.ts and are importable on their own.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err: unknown) => {
     console.error(`\n${err instanceof Error ? err.message : String(err)}`)

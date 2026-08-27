@@ -6,7 +6,9 @@ import type {
   EventBundle,
   EventDoc,
   EventRecap,
+  HostCard,
   LogEntry,
+  MatchingRun,
   Org,
   OwnerRef,
   Feedback,
@@ -19,10 +21,18 @@ import type {
   Template,
   TokenScope,
 } from './types'
+import type { CsvRow } from './people/csv'
+import type { ImportSummary } from './people/merge'
 
 // Inputs are the writable slices of each shape. Ids, timestamps, and
 // ownership are set by the implementation, never by a component.
 
+/**
+ * Everything writable on an org, which from M1 includes `siteProfile` and
+ * `standing`. Both ride `updateOrg(id, Partial<OrgInput>)` rather than getting
+ * their own method: they are fields on a record the host already edits, and a
+ * second write path would be a second place to forget the owner check.
+ */
 export type OrgInput = Omit<Org, 'id' | 'createdAt' | 'createdBy' | 'ownerUid'>
 
 export interface CreateEventInput {
@@ -61,6 +71,25 @@ export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'captured
 export type AvailabilityInput = Omit<AvailabilityBlock, 'id' | 'ownerUid'>
 export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
 
+/** M1. A template is user data, so everything on it except identity is writable. */
+export type TemplateInput = Omit<Template, 'id' | 'ownerUid' | 'createdAt'>
+
+/**
+ * M1. The card without the parts the implementation owns: its id is the
+ * host's uid, and the token is issued separately so saving the card never
+ * quietly rotates a link that is already printed on something.
+ */
+export type HostCardInput = Omit<HostCard, 'id' | 'ownerUid' | 'updatedAt' | 'cardTokenId'>
+
+/**
+ * CRM-3. One parsed row of a guest export, keyed by the export's own column
+ * names. Parsing happens in the page, with `parseCsvRecords`, so the seam
+ * takes rows rather than a file and never has to know about encodings.
+ */
+export type PersonImportRow = CsvRow
+
+export type { ImportSummary }
+
 /**
  * The only writable slice of a person. Everything else is derived by the
  * importer, so allowing a component to patch it would be silently undone on
@@ -90,8 +119,16 @@ export interface HostApi {
   updateEvent(id: string, patch: Partial<EventDoc>): Promise<void>
   deleteEvent(id: string): Promise<void>
 
-  // F3, templates. Read only in M0; the editor is M1.
+  // F3, templates. Read only in M0; M1 adds the editor and save-as-template.
   listTemplates(): Promise<Template[]>
+  createTemplate(input: TemplateInput, uid: string): Promise<string>
+  updateTemplate(id: string, patch: Partial<Template>): Promise<void>
+  deleteTemplate(id: string): Promise<void>
+  /**
+   * M1. Derives skeletons from an event's own tasks and run of show, offset
+   * from its confirmed date or, failing that, its first proposed one.
+   */
+  saveEventAsTemplate(eventId: string, name: string, uid: string): Promise<string>
 
   // F4, dates
   setDateResponse(
@@ -133,6 +170,18 @@ export interface HostApi {
   updateContact(id: string, patch: Partial<CapturedContact>): Promise<void>
   deleteContact(id: string): Promise<void>
 
+  // M1, voice notes on capture. The blob comes from MediaRecorder in the
+  // page; where it goes is the implementation's business.
+  saveVoiceNote(contactId: string, blob: Blob, durationSec: number): Promise<void>
+  deleteVoiceNote(contactId: string): Promise<void>
+
+  // M1, the host's share card. One document per host, keyed by uid, so it is
+  // a get rather than a query.
+  getHostCard(uid: string): Promise<HostCard | null>
+  saveHostCard(patch: HostCardInput, uid: string): Promise<void>
+  /** Issues a card-scoped token for this host, revoking any earlier one. */
+  issueCardToken(uid: string): Promise<string>
+
   // F10, calendar
   listAvailability(): Promise<AvailabilityBlock[]>
   createAvailability(input: AvailabilityInput): Promise<string>
@@ -148,6 +197,20 @@ export interface HostApi {
   getPerson(id: string): Promise<Person | null>
   updatePerson(id: string, patch: PersonEdit): Promise<void>
 
+  /**
+   * CRM-3. Folds a parsed guest export into hp_people with the same merge the
+   * seed importer uses, from the same module: email is the dedupe key, tier is
+   * precedence, and notes, follow-ups and tags the host typed are never
+   * cleared. Running it twice reports everything as unchanged.
+   */
+  importPeople(
+    rows: PersonImportRow[],
+    eventKey: string,
+    uid: string,
+  ): Promise<ImportSummary>
+  /** Turns a captured contact into a person, merging by email when there is one. */
+  promoteContactToPerson(contactId: string, uid: string): Promise<string>
+
   // Step 4, tester feedback. One write, no read: the smallest thing that lets
   // a tester say what is missing without leaving the app.
   sendFeedback(input: FeedbackInput, uid: string): Promise<string>
@@ -156,6 +219,12 @@ export interface HostApi {
   saveRecap(eventId: string, recap: EventRecap): Promise<void>
   /** Issues a recap-scoped token per party and stamps generatedAt. */
   generateRecaps(eventId: string): Promise<void>
+
+  // M1, matching. The engine is pure and runs client side in
+  // src/lib/matching/; these two only keep what it produced, one document per
+  // run, so a later run never overwrites the last one.
+  listMatchingRuns(eventId: string): Promise<MatchingRun[]>
+  saveMatchingRun(eventId: string, run: Omit<MatchingRun, 'id'>): Promise<string>
 
   // 4.3, the Event Zero log
   listLog(eventId: string): Promise<LogEntry[]>

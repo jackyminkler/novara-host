@@ -1,27 +1,57 @@
-import type { HostApi, AvailabilityInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
+import type {
+  HostApi,
+  AvailabilityInput,
+  ContactInput,
+  CreateEventInput,
+  FeedbackInput,
+  HostCardInput,
+  MomentInput,
+  OrgInput,
+  PartyInput,
+  PersonEdit,
+  PersonImportRow,
+  RunItemInput,
+  TaskInput,
+  TemplateInput,
+} from '../api'
 import type {
   CrewMember,
   EventBundle,
   EventDoc,
   EventRecap,
   GuestToken,
+  HostCard,
   LogEntry,
+  MatchingRun,
   Org,
   Party,
+  Person,
   ResponseSource,
   ResponseValue,
   RunItem,
   Task,
+  Template,
   TokenScope,
 } from '../types'
 import { buildStore, type MockStore } from './seed'
-import { materializeTasks, runItemsFromTemplate, tasksFromTemplate } from '../instantiate'
+import {
+  materializeTasks,
+  runItemsFromTemplate,
+  tasksFromTemplate,
+  templateFromEvent,
+} from '../instantiate'
+import { mergeRows, normalizeEmail, personFromContact } from '../people/merge'
 
 // In-memory implementation of the same seam the Firebase one implements.
 // Writes persist to localStorage so a refresh keeps the demo state; clearing
 // the key resets to the fixture.
 
-const STORAGE_KEY = 'novara-hosts-mock-v1'
+// Bumped to v2 for the M1 fields. The version is in the key rather than inside
+// the value on purpose: a browser holding a v1 store has no template matching
+// config, no deliverables and no spend log, and the fixtures are the whole
+// point of mock mode. A new key means the next load rebuilds from seed instead
+// of rendering a demo with half its data missing.
+const STORAGE_KEY = 'novara-hosts-mock-v2'
 
 function load(): MockStore {
   try {
@@ -35,9 +65,25 @@ function load(): MockStore {
 
 const store: MockStore = load()
 
+/**
+ * A mock voice note is an object URL for this page only. Persisting one would
+ * restore a dead `blob:` link after a refresh, which looks like a broken
+ * recording rather than an absent one, so it is dropped on the way out.
+ */
+const isMockVoiceNote = (value: unknown): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { path?: unknown }).path === 'string' &&
+  (value as { path: string }).path.startsWith('mock:')
+
 function persist() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(store, (key, value) =>
+        key === 'voiceNote' && isMockVoiceNote(value) ? null : value,
+      ),
+    )
   } catch {
     // Private browsing and quota errors are not worth failing a write over.
   }
@@ -169,6 +215,9 @@ export const mockApi: HostApi = {
       governance: { officialListing: '', listingUrl: '', guestContactsOwner: '', dualPosts: '' },
       signupCount: null,
       recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
+      spendLog: [],
+      talkTracks: [],
+      shotList: [],
       templateId: input.templateId,
       hostUid: uid,
       hostDisplayName: input.hostDisplayName,
@@ -197,6 +246,7 @@ export const mockApi: HostApi = {
         profile: clone(org?.profile ?? {}),
         customFields: [],
         outcomes: [],
+        deliverables: [],
         order: index,
       })
     })
@@ -217,6 +267,7 @@ export const mockApi: HostApi = {
     }
     store.crew[eventId] = []
     store.log[eventId] = []
+    store.matching[eventId] = []
 
     persist()
     return ok(eventId)
@@ -236,12 +287,67 @@ export const mockApi: HostApi = {
     delete store.runOfShow[eventId]
     delete store.crew[eventId]
     delete store.log[eventId]
+    delete store.matching[eventId]
     store.tokens = store.tokens.filter((t) => t.eventId !== eventId)
     persist()
     return ok(undefined)
   },
 
-  listTemplates: () => ok(owned(store.templates)),
+  listTemplates: () => ok(owned(store.templates).sort((a, b) => a.name.localeCompare(b.name))),
+
+  createTemplate: (input: TemplateInput, uid: string) => {
+    const template: Template = {
+      ...clone(input),
+      id: id('tpl'),
+      ownerUid: uid,
+      createdAt: new Date().toISOString(),
+    }
+    store.templates.push(template)
+    persist()
+    return ok(template.id)
+  },
+
+  updateTemplate: (templateId, patch) => {
+    const template = store.templates.find((t) => t.id === templateId)
+    if (template) Object.assign(template, clone(patch))
+    persist()
+    return ok(undefined)
+  },
+
+  deleteTemplate: (templateId) => {
+    store.templates = store.templates.filter((t) => t.id !== templateId)
+    persist()
+    return ok(undefined)
+  },
+
+  saveEventAsTemplate: (eventId, name, uid) => {
+    const event = requireEvent(eventId)
+    // A template derived from an event that itself came from one keeps that
+    // template's matching config, since the questions a run asks do not change
+    // just because the plan was saved again.
+    const from = event.templateId
+      ? store.templates.find((t) => t.id === event.templateId) ?? null
+      : null
+    const template: Template = {
+      ...templateFromEvent(
+        {
+          event,
+          parties: listOf(store.parties, eventId),
+          tasks: listOf(store.tasks, eventId),
+          runOfShow: listOf(store.runOfShow, eventId),
+          orgs: owned(store.orgs),
+        },
+        name,
+        from?.matching ?? null,
+      ),
+      id: id('tpl'),
+      ownerUid: uid,
+      createdAt: new Date().toISOString(),
+    }
+    store.templates.push(template)
+    persist()
+    return ok(template.id)
+  },
 
   // F4, dates
 
@@ -296,6 +402,7 @@ export const mockApi: HostApi = {
       tokenId: null,
       nudgeCount: 0,
       outcomes: [],
+      deliverables: [],
       order: nextOrder(parties),
     }
     parties.push(party)
@@ -463,6 +570,80 @@ export const mockApi: HostApi = {
     return ok(undefined)
   },
 
+  // M1, voice notes. Mock keeps the recording as an object URL, which lives
+  // as long as the page does. Real uploads are the Firebase implementation's
+  // job; this is enough to build and check the player against.
+
+  saveVoiceNote: (contactId, blob, durationSec) => {
+    const contact = store.contacts.find((c) => c.id === contactId)
+    if (contact) {
+      if (contact.voiceNote?.url.startsWith('blob:')) URL.revokeObjectURL(contact.voiceNote.url)
+      contact.voiceNote = {
+        path: `mock:${contactId}`,
+        url: URL.createObjectURL(blob),
+        durationSec,
+      }
+    }
+    persist()
+    return ok(undefined)
+  },
+
+  deleteVoiceNote: (contactId) => {
+    const contact = store.contacts.find((c) => c.id === contactId)
+    if (contact) {
+      if (contact.voiceNote?.url.startsWith('blob:')) URL.revokeObjectURL(contact.voiceNote.url)
+      contact.voiceNote = null
+    }
+    persist()
+    return ok(undefined)
+  },
+
+  // M1, the host's share card
+
+  getHostCard: (uid) => ok(store.profiles.find((c) => c.id === uid && c.ownerUid === uid) ?? null),
+
+  saveHostCard: (patch: HostCardInput, uid: string) => {
+    const existing = store.profiles.find((c) => c.id === uid)
+    const updatedAt = new Date().toISOString()
+    if (existing) {
+      Object.assign(existing, clone(patch), { updatedAt })
+    } else {
+      const card: HostCard = {
+        ...clone(patch),
+        id: uid,
+        ownerUid: uid,
+        cardTokenId: null,
+        updatedAt,
+      }
+      store.profiles.push(card)
+    }
+    persist()
+    return ok(undefined)
+  },
+
+  issueCardToken: (uid) => {
+    // A card token has no event behind it, so it cannot go through issueToken:
+    // eventId is empty and the subject is the host herself.
+    for (const t of store.tokens) {
+      if (t.scope === 'card' && t.subjectId === uid) t.revoked = true
+    }
+    const fresh: GuestToken = {
+      id: token(),
+      ownerUid: uid,
+      eventId: '',
+      scope: 'card',
+      subjectId: uid,
+      revoked: false,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    }
+    store.tokens.push(fresh)
+    const card = store.profiles.find((c) => c.id === uid)
+    if (card) card.cardTokenId = fresh.id
+    persist()
+    return ok(fresh.id)
+  },
+
   // F10, calendar
 
   listAvailability: () => ok(owned(store.availability)),
@@ -509,6 +690,55 @@ export const mockApi: HostApi = {
     return ok(undefined)
   },
 
+  importPeople: (rows: PersonImportRow[], eventKey: string, uid: string) => {
+    // The same merge module the seed importer calls, so mock mode and a real
+    // import cannot disagree about tiers, dedupe, or what an import may clear.
+    const mine = store.people.filter((p) => p.ownerUid === uid)
+    const idsByEmail = new Map(mine.map((p) => [p.email, p.id]))
+    const { people, summary, touched } = mergeRows(
+      mine.map(({ id: _id, ...rest }) => rest),
+      rows,
+      eventKey,
+      null,
+      uid,
+    )
+
+    for (const email of touched) {
+      const merged = people.get(email)
+      if (!merged) continue
+      const existingId = idsByEmail.get(email)
+      const existing = existingId ? store.people.find((p) => p.id === existingId) : undefined
+      if (existing) Object.assign(existing, clone(merged))
+      else store.people.push({ ...clone(merged), id: id('per') })
+    }
+    persist()
+    return ok(summary)
+  },
+
+  promoteContactToPerson: (contactId, uid) => {
+    const contact = store.contacts.find((c) => c.id === contactId && c.ownerUid === uid)
+    if (!contact) throw new Error('contact_not_found')
+
+    // No email means no dedupe key, so this always creates. Two promotions of
+    // the same handshake would make two people, which the page prevents by
+    // only offering the action once.
+    const email = normalizeEmail(contact.handles.email ?? '')
+    const existing = email
+      ? store.people.find((p) => p.ownerUid === uid && p.email === email) ?? null
+      : null
+    const merged = personFromContact(contact, uid, existing)
+
+    if (existing) {
+      Object.assign(existing, clone(merged), { id: existing.id })
+      persist()
+      return ok(existing.id)
+    }
+    const person: Person = { ...clone(merged), id: id('per') }
+    store.people.push(person)
+    persist()
+    return ok(person.id)
+  },
+
   sendFeedback: (input: FeedbackInput, uid: string) => {
     const entry = { ...clone(input), id: id('fb'), ownerUid: uid, createdAt: new Date().toISOString() }
     store.feedback.push(entry)
@@ -533,6 +763,18 @@ export const mockApi: HostApi = {
     event.recap.generatedAt = new Date().toISOString()
     event.status = 'wrapped'
     persist()
+  },
+
+  // M1, matching runs
+
+  listMatchingRuns: (eventId) =>
+    ok([...listOf(store.matching, eventId)].sort((a, b) => b.createdAt.localeCompare(a.createdAt))),
+
+  saveMatchingRun: (eventId, run) => {
+    const stored: MatchingRun = { ...clone(run), id: id('mr') }
+    listOf(store.matching, eventId).push(stored)
+    persist()
+    return ok(stored.id)
   },
 
   // 4.3, the Event Zero log

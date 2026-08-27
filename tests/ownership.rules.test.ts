@@ -49,7 +49,16 @@ const COLLECTIONS = [
   'hp_guestTokens',
   'hp_people',
   'hp_feedback',
+  'hp_profiles',
 ]
+
+/**
+ * Every subcollection of hp_events. These inherit their owner from the parent
+ * event through hpOwnsEvent(), and each one needs its own explicit match
+ * block: a collection-group rule would span the consumer app's subcollections
+ * in the shared ruleset, so the list here is what proves the blocks exist.
+ */
+const SUBCOLLECTIONS = ['parties', 'tasks', 'runOfShow', 'crew', 'log', 'matching']
 
 let testEnv: RulesTestEnvironment
 
@@ -79,7 +88,9 @@ beforeEach(async () => {
     for (const name of COLLECTIONS) {
       await setDoc(doc(db, name, 'owned'), { ownerUid: OWNER, name: 'owned by the first host' })
     }
-    await setDoc(doc(db, 'hp_events/owned/tasks/t1'), { title: 'a task on the first host event' })
+    for (const name of SUBCOLLECTIONS) {
+      await setDoc(doc(db, 'hp_events/owned', name, 'row'), { note: 'under the first host event' })
+    }
   })
 })
 
@@ -98,8 +109,14 @@ describe('the owner', () => {
     expect(snap.size).toBe(1)
   })
 
-  it('reads a subcollection under its own event', async () => {
-    await assertSucceeds(getDoc(doc(asOwner(), 'hp_events/owned/tasks/t1')))
+  it.each(SUBCOLLECTIONS)('reads %s under its own event', async (name) => {
+    await assertSucceeds(getDoc(doc(asOwner(), 'hp_events/owned', name, 'row')))
+  })
+
+  it.each(SUBCOLLECTIONS)('writes %s under its own event', async (name) => {
+    await assertSucceeds(
+      setDoc(doc(asOwner(), 'hp_events/owned', name, 'fresh'), { note: 'mine to write' }),
+    )
   })
 
   it('creates a document it owns', async () => {
@@ -130,8 +147,16 @@ describe('a second allowlisted host', () => {
     await assertFails(updateDoc(doc(asOther(), name, 'owned'), { name: 'taken' }))
   })
 
-  it('cannot read a subcollection under the owner event', async () => {
-    await assertFails(getDoc(doc(asOther(), 'hp_events/owned/tasks/t1')))
+  it.each(SUBCOLLECTIONS)('cannot read %s under the owner event', async (name) => {
+    await assertFails(getDoc(doc(asOther(), 'hp_events/owned', name, 'row')))
+  })
+
+  it.each(SUBCOLLECTIONS)('cannot write %s under the owner event', async (name) => {
+    // The reverse of the read case. A matching run or a deliverable planted in
+    // someone else's event is as bad as one read out of it.
+    await assertFails(
+      setDoc(doc(asOther(), 'hp_events/owned', name, 'planted'), { note: 'not mine' }),
+    )
   })
 
   it('cannot create a document stamped with someone else as owner', async () => {

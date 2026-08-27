@@ -1,13 +1,25 @@
 // Shapes for every hp_ document. PRD section 3.3 is the base; F10 to F13 add
 // the fields below it, per the note in 3.3 that the builder defines them
-// following the same conventions.
+// following the same conventions. M1 (PRD section 5) adds another layer on
+// top of those, marked as such where it lands.
+//
+// Fields added after a collection went live are still declared required here
+// and defaulted by whoever writes the document, because a field that is
+// optional in the type is a field every call site has to remember to check.
+// Production documents predate the M1 fields, so firebaseApi normalizes them
+// on read instead: see the normalizers at the top of that file.
 
 export type OrgType = 'cohost' | 'sponsor' | 'vendor' | 'activation' | 'venue'
 export type EventStatus = 'draft' | 'planning' | 'confirmed' | 'live' | 'wrapped'
 export type PartyStatus = 'invited' | 'confirmed' | 'declined'
 export type ResponseValue = 'yes' | 'no' | 'maybe'
 export type LinkStatus = 'draft' | 'final'
-export type TokenScope = 'party' | 'crew' | 'recap'
+/**
+ * What a capability token opens. M1 adds `card`, the host's share card, which
+ * is the only scope with no event behind it: those tokens carry `eventId` of
+ * `''` and a `subjectId` of the host's own uid.
+ */
+export type TokenScope = 'party' | 'crew' | 'recap' | 'card'
 
 /** Where a date response came from. Both count the same toward confirming. */
 export type ResponseSource = 'link' | 'host'
@@ -34,6 +46,39 @@ export interface CustomField {
   value: string
 }
 
+/** M1 site profiles. One lesson learned at one event, kept on the venue. */
+export interface SiteLesson {
+  id: string
+  text: string
+  eventId: string | null
+  at: string
+}
+
+/**
+ * M1 site profiles and the lessons loop. Private to the host and meaningful
+ * on a venue, where the wind, the power, and the permit line are the things
+ * nobody remembers until the morning of the next one.
+ */
+export interface SiteProfile {
+  lessons: SiteLesson[]
+  /** Headcount above which this site needs a permit, plus the sound rule. */
+  permitThresholds: { amplifiedSound: boolean; headcountAbove: number | null }
+  notes: string
+}
+
+/**
+ * M1 standing availability. A window this partner is usually open for, or a
+ * stretch they are usually out. Free text plus optional dates, because most
+ * of what a partner says about their calendar is a sentence, not a range.
+ */
+export interface StandingNote {
+  id: string
+  kind: 'window' | 'blackout'
+  text: string
+  startDate: string | null
+  endDate: string | null
+}
+
 export interface Org {
   id: string
   /**
@@ -54,6 +99,10 @@ export interface Org {
   via: string
   relationshipTerms: string
   notes: string
+  /** M1. Null on every org that is not a place. */
+  siteProfile: SiteProfile | null
+  /** M1. What this partner's calendar usually looks like. */
+  standing: StandingNote[]
   createdAt: string
   createdBy: string
 }
@@ -97,6 +146,27 @@ export interface EventRecap {
   generatedAt: string | null
 }
 
+/**
+ * M1 sponsor ROI. What the event cost, in money or in kind, optionally
+ * attributed to the party who covered it. Host-side only: spend never
+ * reaches a guest page.
+ */
+export interface SpendEntry {
+  id: string
+  label: string
+  amount: number
+  kind: 'cash' | 'inkind'
+  partyId: string | null
+}
+
+/** M1 shot list. What to photograph, and who is holding the camera. */
+export interface ShotItem {
+  id: string
+  description: string
+  owner: OwnerRef
+  done: boolean
+}
+
 export interface EventDoc {
   id: string
   ownerUid: string
@@ -122,6 +192,12 @@ export interface EventDoc {
   governance: PageGovernance
   signupCount: number | null
   recap: EventRecap
+  /** M1 sponsor ROI, host-side only. */
+  spendLog: SpendEntry[]
+  /** M1. Conversation prompts for the day, one line each. */
+  talkTracks: string[]
+  /** M1. */
+  shotList: ShotItem[]
   templateId: string | null
   hostUid: string
   /** Denormalised so guest pages can say who invited them without an auth read. */
@@ -143,6 +219,20 @@ export interface Outcome {
   value: string
 }
 
+/**
+ * M1 deliverables checklist and effort ledger. Both directions on one list,
+ * so an informal arrangement where one side quietly does everything stays
+ * visible instead of being remembered differently by each party.
+ */
+export interface Deliverable {
+  id: string
+  /** Who owes it: `party` means they deliver, `host` means you do. */
+  direction: 'party' | 'host'
+  title: string
+  due: string | null
+  done: boolean
+}
+
 export interface Party {
   id: string
   orgId: string
@@ -160,6 +250,8 @@ export interface Party {
   profile: Record<string, string>
   customFields: CustomField[]
   outcomes: Outcome[]
+  /** M1. Both directions, shown to this party on their guest page. */
+  deliverables: Deliverable[]
   order: number
 }
 
@@ -221,6 +313,19 @@ export interface RunSkeletonItem {
   notes?: string
 }
 
+/**
+ * M1 matching. Plain configuration, held on the template because a run that
+ * pairs people asks the same questions every time it happens. Nothing here
+ * couples to the engine: it names a mode and a profile and lists the signup
+ * questions the run needs, and the engine reads those names later.
+ */
+export interface TemplateMatching {
+  mode: 'rank' | 'sparks' | 'pods'
+  profileName: string
+  /** Signup questions this profile needs. Without them, matching cannot run. */
+  requiredQuestions: string[]
+}
+
 export interface Template {
   id: string
   ownerUid: string
@@ -234,8 +339,28 @@ export interface Template {
     durationMinutes?: number
     startTime?: string
   }
+  /** M1. Null on a template whose events do not pair anyone up. */
+  matching: TemplateMatching | null
   createdFrom: 'seed' | 'event' | 'blank'
   createdAt: string
+}
+
+/**
+ * M1 matching. One stored run per document, in the `matching` subcollection
+ * of its event, so a later run never overwrites what the last one produced.
+ * The engine itself is pure and client side; this only keeps the output.
+ */
+export interface MatchingRun {
+  id: string
+  mode: 'rank' | 'sparks' | 'pods'
+  profileName: string
+  /** Which vendored engine source produced this, for reading old runs back. */
+  engineVersion: string
+  createdAt: string
+  peopleCount: number
+  matchedCount: number
+  /** Engine JSON, shape per the matchcore output. Stored, never interpreted here. */
+  results: unknown
 }
 
 // F8 meeting capture.
@@ -252,9 +377,38 @@ export interface CapturedContact {
   }
   eventId: string | null
   note: string
+  /** M1 quote capture. Something they actually said, kept in their words. */
+  quote: string
+  /**
+   * M1 voice notes. Uploaded to Storage under hp_voice; `path` is the object
+   * path and `url` the download URL. Null until one is recorded.
+   */
+  voiceNote: { path: string; url: string; durationSec: number } | null
   followUp: { due: string; done: boolean } | null
   capturedAt: string
   capturedBy: string
+}
+
+/**
+ * M1 QR share card. One document per host in hp_profiles, with the uid as
+ * the document id, so the card is reachable without a query. What the host
+ * chooses to hand out, which is deliberately not everything the account knows.
+ */
+export interface HostCard {
+  id: string
+  ownerUid: string
+  displayName: string
+  headline: string
+  methods: {
+    instagram?: string
+    linkedin?: string
+    phone?: string
+    email?: string
+    other?: string
+  }
+  /** The `card` scoped token the public link opens. Null until issued. */
+  cardTokenId: string | null
+  updatedAt: string
 }
 
 // F10 calendar.
