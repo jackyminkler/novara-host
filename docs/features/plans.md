@@ -51,6 +51,14 @@ build; the collection is `hp_huddles`.
   wall-clock rule, derive it where the organizer is and publish the result.
 - Deadlines are enforced by comparing stored `respondByMs`/`happenByMs` against now, in
   the functions and in mockGuest. Never parse the display strings server side.
+- On `hp_huddles`, adding a guest-writable field is a security change even when it is not
+  a rules change. Guests write through the Admin SDK, which bypasses rules, so the
+  hand-rolled bounds in `hpGuestSubmit` are the only validation there is; an unbounded
+  field simply writes, with no permission-denied to catch it. Every guest-settable field
+  gets an explicit bound (length, type, count, whether it can be set twice) in the same
+  commit that adds it, and `handleHuddleSubmit` only ever updates the `participants` and
+  `votes` keys, never anything derived from the payload. (Flagged by the consumer-repo
+  rules session, 2026-08-26.)
 - The two `guestTypes.ts` copies and `mockGuest.ts` must move together with
   `functions/src/index.ts`. The `GUEST_ACTIONS` array is the runtime gate; adding an
   action to the type without the array refuses it in production only, which mock mode
