@@ -55,11 +55,37 @@ jobs:
           '
 
       - name: No collection-group rules proposed in pending-rules.md
-        # Collection-group rules span both products in the shared ruleset.
+        # Collection-group rules span both products in the shared ruleset, so a rule
+        # written for one silently governs the other.
+        #
+        # Scans ONLY fenced code blocks. A rule proposal is code; the surrounding prose
+        # discusses rules, and this file's own warning against collection-group rules
+        # quotes the pattern verbatim. Grepping the whole file matched that warning and
+        # failed the build on the first run -- a grep answers "does this string appear",
+        # never "does this thing exist". See ENGINEERING.md section 4.
         run: |
-          if [ -f docs/pending-rules.md ] && grep -nE 'match /\{path=\*\*\}/' docs/pending-rules.md; then
-            echo "::error::pending-rules.md proposes a collection-group rule. Those match" \
-                 "subcollections in the consumer app too. See CLAUDE.md."
-            exit 1
-          fi
-          echo "No collection-group rules proposed."
+          python3 - <<'EOF'
+          import re, sys, pathlib
+
+          f = pathlib.Path("docs/pending-rules.md")
+          if not f.exists():
+              print("No pending-rules.md."); sys.exit(0)
+
+          text = f.read_text(encoding="utf-8")
+          blocks = re.findall(r"^```[^\n]*\n(.*?)^```", text, re.M | re.S)
+          if not blocks:
+              print("No fenced rule blocks to check."); sys.exit(0)
+
+          pattern = re.compile(r"match\s+/\{path=\*\*\}/")
+          bad = [b for b in blocks if pattern.search(b)]
+          if bad:
+              print("::error::pending-rules.md proposes a collection-group rule. Those "
+                    "match the consumer app's subcollections too in the shared ruleset. "
+                    "See CLAUDE.md.")
+              for b in bad:
+                  for line in b.splitlines():
+                      if pattern.search(line):
+                          print(f"  {line.strip()}")
+              sys.exit(1)
+          print(f"Checked {len(blocks)} fenced block(s). No collection-group rules proposed.")
+          EOF
