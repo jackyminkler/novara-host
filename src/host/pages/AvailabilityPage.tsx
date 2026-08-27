@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarPlus, Check, Copy, Link2, RefreshCw, Trash2, Unplug } from 'lucide-react'
+import { CalendarPlus, Check, Copy, Link2, RefreshCw, Trash2, Unplug, Users } from 'lucide-react'
 import { Page, PageHeader } from './Page'
 import { Card, Divider, EmptyState, ErrorState, Loading, SubTitle, cx } from '../../ui/primitives'
 import { Field, Input, Select } from '../../ui/form'
@@ -24,8 +24,10 @@ import type {
   Booking,
   DayHoursDoc,
   FriendLink,
+  Huddle,
   KindTemplateDoc,
 } from '../../data/types'
+import { EXPIRY_PRESETS } from '../../data/types'
 import {
   fetchEvents,
   forgetToken,
@@ -54,6 +56,7 @@ interface Loaded {
   settings: AvailabilitySettings | null
   links: FriendLink[]
   bookings: Booking[]
+  huddles: Huddle[]
 }
 
 function hours(m: number): string {
@@ -70,6 +73,7 @@ export default function AvailabilityPage() {
       settings: await api.getAvailabilitySettings(),
       links: await api.listFriendLinks(),
       bookings: await api.listBookings(),
+      huddles: await api.listHuddles(),
     }),
     [],
   )
@@ -441,6 +445,8 @@ export default function AvailabilityPage() {
         </>
       )}
 
+      <Huddles huddles={state.data?.huddles ?? []} onChange={state.reload} />
+
       <Links links={state.data?.links ?? []} bookings={state.data?.bookings ?? []} onChange={state.reload} />
     </Page>
   )
@@ -766,6 +772,190 @@ function Links({
             </div>
           ))}
         </>
+      )}
+    </Card>
+  )
+}
+
+const DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+
+/**
+ * A group finding a time together, live.
+ *
+ * The one place a single shared link is right rather than one per person: the
+ * whole point is handing the same thing to a room. It is safe to share because
+ * it expires, and because nobody contributes more than free time.
+ */
+function Huddles({ huddles, onChange }: { huddles: Huddle[]; onChange: () => void }) {
+  const { uid } = useHost()
+  const { mutate, busy } = useMutation(onChange)
+  const [title, setTitle] = useState('')
+  const [hours, setHours] = useState(2)
+  const [expiryHours, setExpiryHours] = useState(24)
+  const [weekdays, setWeekdays] = useState<number[]>([])
+  const [copied, setCopied] = useState<string | null>(null)
+
+  function expiryFrom(h: number): string {
+    return new Date(Date.now() + h * 3600_000).toISOString()
+  }
+
+  function create() {
+    if (!title.trim()) return
+    void mutate(async (api) => {
+      await api.createHuddle(
+        {
+          title: title.trim(),
+          durationMinutes: hours * 60,
+          horizonDays: 30,
+          weekdays,
+          expiresAt: expiryFrom(expiryHours),
+        },
+        uid,
+      )
+      track('hp_huddle_created', {})
+      setTitle('')
+      setWeekdays([])
+    })
+  }
+
+  return (
+    <Card className="mb-4 p-4">
+      <SubTitle className="mb-[2px]">Find a time together</SubTitle>
+      <p className="mb-3 text-[12.5px] text-sec">
+        One link for the whole group. Everyone adds their calendar, it ranks the times most of you
+        can make, and you pick one while you are still in the room.
+      </p>
+
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <Field label="What for" className="mb-0 w-[200px]">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Next sunrise run"
+            onKeyDown={(e) => e.key === 'Enter' && create()}
+          />
+        </Field>
+        <Field label="How long" className="mb-0 w-[110px]">
+          <Select value={String(hours)} onChange={(e) => setHours(Number(e.target.value))}>
+            {[1, 2, 3, 4, 6].map((h) => (
+              <option key={h} value={h}>
+                {h} hr
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Link lasts" className="mb-0 w-[130px]">
+          <Select value={String(expiryHours)} onChange={(e) => setExpiryHours(Number(e.target.value))}>
+            {EXPIRY_PRESETS.map((p) => (
+              <option key={p.hours} value={p.hours}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <button
+          type="button"
+          disabled={busy || !title.trim()}
+          onClick={create}
+          className="hairline mb-[1px] inline-flex items-center gap-[6px] rounded-[9px] border border-line bg-surface px-[13px] py-[7px] text-[13px] font-medium text-ink transition hover:border-vio hover:text-vio disabled:opacity-50"
+        >
+          <Users size={14} />
+          Make a link
+        </button>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-[4px]">
+        <span className="mr-1 text-[11px] text-mut">Only</span>
+        {DAY_INITIALS.map((letter, day) => {
+          const on = weekdays.includes(day)
+          return (
+            <button
+              key={day}
+              type="button"
+              aria-label={DAY_NAMES[day]}
+              aria-pressed={on}
+              onClick={() =>
+                setWeekdays((prev) => (on ? prev.filter((d) => d !== day) : [...prev, day]))
+              }
+              className={cx(
+                'hairline h-[24px] w-[24px] rounded-full border text-[11px] font-medium transition',
+                on ? 'border-vio bg-viot text-vio' : 'border-line bg-surface text-mut',
+              )}
+            >
+              {letter}
+            </button>
+          )
+        })}
+        {weekdays.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setWeekdays([])}
+            className="ml-1 text-[11px] text-mut transition hover:text-ink"
+          >
+            Any day
+          </button>
+        )}
+      </div>
+
+      {huddles.length === 0 ? (
+        <EmptyState title="No huddles yet" body="Make one when you need a group to agree on a date." />
+      ) : (
+        huddles.map((huddle) => {
+          const lapsed = Boolean(huddle.expiresAt && Date.parse(huddle.expiresAt) < Date.now())
+          const topVote = Object.entries(huddle.votes).sort((a, b) => b[1].length - a[1].length)[0]
+          return (
+            <div
+              key={huddle.id}
+              className="flex items-center gap-2 border-0 border-b border-hair py-[9px] last:border-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-ink">{huddle.title}</p>
+                <p className="text-[11.5px] text-mut">
+                  {huddle.participants.length === 0
+                    ? 'Nobody has joined'
+                    : `${huddle.participants.length} joined`}
+                  {topVote && `, leading ${formatDayLong(new Date(Number(topVote[0])).toISOString())}`}
+                  {lapsed
+                    ? ', link has lapsed'
+                    : huddle.expiresAt && `, until ${formatDayLong(huddle.expiresAt)}`}
+                </p>
+              </div>
+              {lapsed && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void mutate((api) => api.extendHuddle(huddle.id, expiryFrom(expiryHours)))
+                  }
+                  className="text-[12px] text-vio transition hover:opacity-70 disabled:opacity-50"
+                >
+                  Reopen
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(`${window.location.origin}/g/${huddle.tokenId}`)
+                  setCopied(huddle.id)
+                  setTimeout(() => setCopied(null), 2000)
+                }}
+                className="inline-flex items-center gap-1 text-[12px] text-sec transition hover:text-vio"
+              >
+                {copied === huddle.id ? <Check size={13} /> : <Copy size={13} />}
+                {copied === huddle.id ? 'Copied' : 'Copy link'}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void mutate((api) => api.deleteHuddle(huddle.id))}
+                className="text-mut transition hover:text-rose-600 disabled:opacity-50"
+                aria-label={`Remove the huddle ${huddle.title}`}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )
+        })
       )}
     </Card>
   )

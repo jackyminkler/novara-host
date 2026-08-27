@@ -17,6 +17,7 @@ import type {
   AvailabilityInput,
   AvailabilitySettingsPatch,
   FriendLinkInput,
+  HuddleInput,
   ContactInput,
   CreateEventInput,
   FeedbackInput,
@@ -32,6 +33,7 @@ import type {
   AvailabilitySettings,
   Booking,
   FriendLink,
+  Huddle,
   CapturedContact,
   CitywideMoment,
   CrewMember,
@@ -67,6 +69,7 @@ const MOMENTS = 'hp_moments'
 const AVAILABILITY_SETTINGS = 'hp_availabilitySettings'
 const FRIEND_LINKS = 'hp_friendLinks'
 const BOOKINGS = 'hp_bookings'
+const HUDDLES = 'hp_huddles'
 const TOKENS = 'hp_guestTokens'
 const PEOPLE = 'hp_people'
 const FEEDBACK = 'hp_feedback'
@@ -553,6 +556,56 @@ export const firebaseApi: HostApi = {
     const tokenId = snap.exists() ? (snap.data() as FriendLink).tokenId : null
     if (tokenId) batch.update(doc(db, TOKENS, tokenId), { revoked: true })
     batch.delete(doc(db, FRIEND_LINKS, linkId))
+    await batch.commit()
+  },
+
+  async listHuddles() {
+    return readOwned<Huddle>(HUDDLES)
+  },
+
+  async createHuddle(input: HuddleInput, uid: string) {
+    const tokenId = makeToken()
+    const batch = writeBatch(db)
+    const ref = doc(collection(db, HUDDLES))
+    batch.set(ref, {
+      ...input,
+      ownerUid: uid,
+      tokenId,
+      participants: [],
+      votes: {},
+      settledStartsAt: null,
+      createdAt: now(),
+    })
+    batch.set(doc(db, TOKENS, tokenId), {
+      ownerUid: uid,
+      eventId: null,
+      scope: 'huddle',
+      subjectId: ref.id,
+      revoked: false,
+      createdAt: now(),
+      lastUsedAt: null,
+      expiresAt: input.expiresAt,
+    })
+    await batch.commit()
+    return { id: ref.id, token: tokenId }
+  },
+
+  async extendHuddle(huddleId, expiresAt) {
+    const snap = await getDoc(doc(db, HUDDLES, huddleId))
+    if (!snap.exists()) return
+    const batch = writeBatch(db)
+    batch.update(doc(db, HUDDLES, huddleId), { expiresAt })
+    // The token carries the expiry the guest function checks, so both move or
+    // the link and the page disagree about whether it is alive.
+    batch.update(doc(db, TOKENS, (snap.data() as Huddle).tokenId), { expiresAt })
+    await batch.commit()
+  },
+
+  async deleteHuddle(huddleId) {
+    const snap = await getDoc(doc(db, HUDDLES, huddleId))
+    const batch = writeBatch(db)
+    if (snap.exists()) batch.update(doc(db, TOKENS, (snap.data() as Huddle).tokenId), { revoked: true })
+    batch.delete(doc(db, HUDDLES, huddleId))
     await batch.commit()
   },
 

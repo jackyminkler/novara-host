@@ -3,6 +3,7 @@ import type {
   AvailabilitySettings,
   Booking,
   FriendLink,
+  Huddle,
   CapturedContact,
   CitywideMoment,
   CrewMember,
@@ -62,6 +63,10 @@ export interface RunItemInput {
 
 export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy' | 'ownerUid'>
 export type FriendLinkInput = Pick<FriendLink, 'name' | 'horizonDays' | 'kinds'>
+export type HuddleInput = Pick<
+  Huddle,
+  'title' | 'durationMinutes' | 'horizonDays' | 'weekdays' | 'expiresAt'
+>
 /** The writable slice of the availability document. Busy intervals are derived, never typed. */
 export type AvailabilitySettingsPatch = Partial<
   Pick<AvailabilitySettings, | 'openHours'
@@ -173,6 +178,13 @@ export interface HostApi {
 
   listBookings(): Promise<Booking[]>
   cancelBooking(id: string): Promise<void>
+
+  // A group finding a time together. One link for everyone, and it expires.
+  listHuddles(): Promise<Huddle[]>
+  createHuddle(input: HuddleInput, uid: string): Promise<{ id: string; token: string }>
+  /** Pushes the expiry out again without changing the link. */
+  extendHuddle(id: string, expiresAt: string): Promise<void>
+  deleteHuddle(id: string): Promise<void>
 
   // CRM-1, people. listPeople returns the owner's whole list in one read and
   // the page filters in memory: at this size that needs no composite index and

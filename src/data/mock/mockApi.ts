@@ -1,9 +1,10 @@
-import type { HostApi, AvailabilitySettingsPatch, AvailabilityInput, FriendLinkInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
+import type { HostApi, AvailabilitySettingsPatch, AvailabilityInput, FriendLinkInput, HuddleInput, ContactInput, CreateEventInput, FeedbackInput, MomentInput, OrgInput, PartyInput, PersonEdit, RunItemInput, TaskInput } from '../api'
 import type {
   AvailabilitySettings,
   Booking,
   CrewMember,
   FriendLink,
+  Huddle,
   EventBundle,
   EventDoc,
   EventRecap,
@@ -558,6 +559,61 @@ export const mockApi: HostApi = {
       if (token) token.revoked = true
     }
     store.friendLinks = store.friendLinks.filter((l) => l.id !== linkId)
+    persist()
+    return ok(undefined)
+  },
+
+  listHuddles: () => ok(owned(store.huddles)),
+
+  createHuddle: (input: HuddleInput, uid: string) => {
+    const fresh = token()
+    const huddle: Huddle = {
+      ...input,
+      id: id('hd'),
+      ownerUid: uid,
+      tokenId: fresh,
+      participants: [],
+      votes: {},
+      settledStartsAt: null,
+      createdAt: new Date().toISOString(),
+    }
+    store.huddles.push(huddle)
+    store.tokens.push({
+      id: fresh,
+      ownerUid: uid,
+      eventId: null,
+      scope: 'huddle',
+      subjectId: huddle.id,
+      revoked: false,
+      createdAt: huddle.createdAt,
+      lastUsedAt: null,
+      expiresAt: input.expiresAt,
+    })
+    persist()
+    return ok({ id: huddle.id, token: fresh })
+  },
+
+  extendHuddle: (huddleId, expiresAt) => {
+    const huddle = store.huddles.find((h) => h.id === huddleId)
+    if (huddle) {
+      huddle.expiresAt = expiresAt
+      // The token carries the expiry the guest function actually checks, so
+      // moving one without the other would leave a live page behind a dead
+      // link, or the reverse.
+      const record = store.tokens.find((t) => t.id === huddle.tokenId)
+      if (record) record.expiresAt = expiresAt
+    }
+    persist()
+    return ok(undefined)
+  },
+
+  deleteHuddle: (huddleId) => {
+    const huddle = store.huddles.find((h) => h.id === huddleId)
+    if (huddle) {
+      const record = store.tokens.find((t) => t.id === huddle.tokenId)
+      if (record) record.revoked = true
+    }
+    store.huddles = store.huddles.filter((h) => h.id !== huddleId)
     persist()
     return ok(undefined)
   },

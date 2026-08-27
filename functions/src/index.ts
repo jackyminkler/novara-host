@@ -8,6 +8,8 @@ import {
   type BookingView,
   type BookingWindow,
   type GuestAction,
+  type GuestScope,
+  type HuddleView,
   type GuestPayload,
   type GuestRunItem,
   type GuestView,
@@ -29,11 +31,12 @@ const EVENTS = "hp_events";
 const AVAILABILITY_SETTINGS = "hp_availabilitySettings";
 const FRIEND_LINKS = "hp_friendLinks";
 const BOOKINGS = "hp_bookings";
+const HUDDLES = "hp_huddles";
 
 interface TokenDoc {
   /** Null for booking tokens, which belong to a host rather than an event. */
   eventId: string | null;
-  scope: "party" | "crew" | "recap" | "booking";
+  scope: "party" | "crew" | "recap" | "booking" | "huddle";
   subjectId: string;
   revoked: boolean;
   ownerUid: string;
@@ -75,7 +78,7 @@ async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestVi
   const { eventId, scope, subjectId } = token.data;
   // Booking tokens carry no event and are served by buildBookingView. Reaching
   // here with one means the caller routed wrong, so refuse rather than guess.
-  if (!eventId || scope === "booking") throw new InvalidToken();
+  if (!eventId || scope === "booking" || scope === "huddle") throw new InvalidToken();
 
   const eventSnap = await db.collection(EVENTS).doc(eventId).get();
   if (!eventSnap.exists) throw new InvalidToken();
@@ -133,7 +136,7 @@ async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestVi
     .sort((a, b) => a.time.localeCompare(b.time));
 
   const view: GuestView = {
-    scope,
+    scope: scope as GuestScope,
     event: {
       title: event.title ?? "",
       description: event.description ?? "",
@@ -267,6 +270,7 @@ async function buildBookingView(token: { id: string; data: TokenDoc }): Promise<
     scope: "booking",
     hostName: "your host",
     friendName: link.name,
+    hostZone: (settings.timeZone as string) ?? "UTC",
     kinds,
     windows,
     mine: booked
@@ -279,6 +283,100 @@ async function buildBookingView(token: { id: string; data: TokenDoc }): Promise<
         durationMinutes: b.durationMinutes ?? 60,
       })),
   };
+}
+
+/**
+ * A huddle, as everyone on the link sees it.
+ *
+ * Every participant's free time goes to every participant, which is the deal a
+ * huddle makes: you see when the others are free, never what they are doing.
+ * Ranking happens in the browser from exactly this data, so there is no second
+ * copy of the suggestion algorithm here to drift from the one in src/lib.
+ */
+async function buildHuddleView(
+  token: { id: string; data: TokenDoc },
+  you: string | null,
+): Promise<HuddleView> {
+  const snap = await db.collection(HUDDLES).doc(token.data.subjectId).get();
+  if (!snap.exists) throw new InvalidToken();
+  const huddle = snap.data() as any;
+  if (huddle.ownerUid !== token.data.ownerUid) throw new InvalidToken();
+
+  return {
+    scope: "huddle",
+    huddleId: snap.id,
+    title: huddle.title ?? "",
+    durationMinutes: huddle.durationMinutes ?? 60,
+    horizonDays: huddle.horizonDays ?? 30,
+    weekdays: huddle.weekdays ?? [],
+    participants: ((huddle.participants ?? []) as any[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      free: p.free ?? [],
+    })),
+    votes: huddle.votes ?? {},
+    settledStartsAt: huddle.settledStartsAt ?? null,
+    expiresAt: huddle.expiresAt ?? null,
+    you,
+  };
+}
+
+/** Huddle writes. Joining replaces rather than duplicates; one vote each. */
+async function handleHuddleSubmit(
+  token: { id: string; data: TokenDoc },
+  action: GuestAction,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  const ref = db.collection(HUDDLES).doc(token.data.subjectId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new InvalidToken();
+  const huddle = snap.data() as any;
+
+  let you = typeof payload.you === "string" ? payload.you.slice(0, 60) : null;
+  const participants: any[] = huddle.participants ?? [];
+
+  if (action === "join_huddle") {
+    const name = payloadString(payload, "name", 80).trim();
+    if (!name) return you;
+    // Bounded: an unchecked list is a way to write a megabyte into someone
+    // else's document, and no real calendar has a thousand free stretches in
+    // a month.
+    const free = (Array.isArray(payload.free) ? payload.free : [])
+      .filter(
+        (w: any) => typeof w?.s === "number" && typeof w?.e === "number" && w.e > w.s
+      )
+      .slice(0, 500)
+      .map((w: any) => ({ s: w.s, e: w.e }));
+
+    const existing = you ? participants.find((p) => p.id === you) : null;
+    if (existing) {
+      // Rejoining updates: someone re-reading their calendar after moving a
+      // meeting should replace their answer, not appear twice.
+      existing.name = name;
+      existing.free = free;
+    } else {
+      you = `hp-${Date.now().toString(36)}${participants.length}`;
+      participants.push({ id: you, name, free, joinedAt: new Date().toISOString() });
+    }
+    await ref.update({ participants });
+    return you;
+  }
+
+  if (action === "cast_vote" && you) {
+    const key = payloadString(payload, "slot", 20);
+    if (!/^\d+$/.test(key)) return you;
+    const votes: Record<string, string[]> = huddle.votes ?? {};
+    // One vote each, moved rather than accumulated: a tally where somebody
+    // voted for everything is not a tally.
+    for (const ids of Object.values(votes)) {
+      const at = ids.indexOf(you);
+      if (at >= 0) ids.splice(at, 1);
+    }
+    votes[key] = [...(votes[key] ?? []), you];
+    await ref.update({ votes });
+  }
+
+  return you;
 }
 
 function payloadString(payload: Record<string, unknown>, key: string, max: number): string {
@@ -347,8 +445,13 @@ export const hpGuestView = onRequest({ invoker: "public" }, async (req, res) => 
   }
   try {
     const token = await loadToken(req.query.t);
+    const you = typeof req.query.you === "string" ? req.query.you.slice(0, 60) : null;
     const view: GuestPayload =
-      token.data.scope === "booking" ? await buildBookingView(token) : await buildView(token);
+      token.data.scope === "booking"
+        ? await buildBookingView(token)
+        : token.data.scope === "huddle"
+          ? await buildHuddleView(token, you)
+          : await buildView(token);
     await touch(token.id);
     // Never cached: a revoked link has to stop working immediately.
     res.set("Cache-Control", "no-store");
@@ -403,6 +506,25 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
       return;
     }
 
+    if (scope === "huddle") {
+      if (action !== "join_huddle" && action !== "cast_vote") {
+        res.status(403).json({ error: "not_permitted" });
+        return;
+      }
+      const you = await handleHuddleSubmit(token, action, payload);
+      const view = await buildHuddleView(token, you);
+      await touch(token.id);
+      res.set("Cache-Control", "no-store");
+      res.status(200).json(view);
+      return;
+    }
+
+    const huddleOnly: GuestAction[] = ["join_huddle", "cast_vote"];
+    if (huddleOnly.includes(action)) {
+      res.status(403).json({ error: "not_permitted" });
+      return;
+    }
+
     const bookingOnly: GuestAction[] = ["book_slot", "cancel_booking"];
     if (bookingOnly.includes(action)) {
       res.status(403).json({ error: "not_permitted" });
@@ -428,12 +550,17 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
         (o) => o.id
       );
 
+      // A partner who connected their calendar sends the same answers with a
+      // different provenance. Only these two values are accepted, so the field
+      // cannot be set to anything the matrix does not know how to render.
+      const source = payload.source === "calendar" ? "calendar" : "link";
+
       const update: Record<string, unknown> = {};
       for (const [optionId, value] of Object.entries(responses)) {
         // Only real options, only real answers. Everything else is dropped.
         if (!optionIds.includes(optionId)) continue;
         if (value !== "yes" && value !== "no" && value !== "maybe") continue;
-        update[`dateResponses.${optionId}`] = { value, source: "link", note: "", at: now };
+        update[`dateResponses.${optionId}`] = { value, source, note: "", at: now };
       }
       if (typeof payload.constraintNote === "string") {
         update.constraintNote = payload.constraintNote.slice(0, 1000);

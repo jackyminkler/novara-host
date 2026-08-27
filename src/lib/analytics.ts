@@ -19,6 +19,7 @@ export type AnalyticsEvent =
   | 'hp_friend_link_created'
   | 'hp_booking_created'
   | 'hp_booking_cancelled'
+  | 'hp_huddle_created'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

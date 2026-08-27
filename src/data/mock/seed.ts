@@ -2,6 +2,7 @@ import type {
   AvailabilitySettings,
   Booking,
   FriendLink,
+  Huddle,
   AvailabilityBlock,
   CapturedContact,
   CitywideMoment,
@@ -42,6 +43,7 @@ export interface MockStore {
   availabilitySettings: AvailabilitySettings | null
   friendLinks: FriendLink[]
   bookings: Booking[]
+  huddles: Huddle[]
 }
 
 const HOST = 'mock-host-uid'
@@ -672,5 +674,6 @@ export function buildStore(): MockStore {
     availabilitySettings: null,
     friendLinks: [],
     bookings: [],
+    huddles: [],
   }
 }

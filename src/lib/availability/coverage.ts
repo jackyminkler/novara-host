@@ -90,6 +90,21 @@ export interface SuggestOptions {
   limit: number
   /** Ignore anything where fewer than this many can make it. */
   minFree?: number
+  /**
+   * Preferred local start, "07:00", usually from a template.
+   *
+   * A preference, not a filter. A sunrise run template wants 7am, but a
+   * Saturday that is only open from 9 is still a better answer than no answer,
+   * so a window that cannot hold the preferred time falls back to its own
+   * start and simply ranks below the ones that can.
+   */
+  preferredStart?: string
+  /**
+   * Weekdays worth considering, 0 = Sunday. Empty or absent means any day.
+   * A template built from a Saturday morning run should keep proposing
+   * Saturdays rather than the next free Tuesday.
+   */
+  weekdays?: number[]
 }
 
 export interface Suggestion {
@@ -97,6 +112,8 @@ export interface Suggestion {
   end: number
   free: string[]
   busy: string[]
+  /** True when the window could hold the template's preferred time of day. */
+  atPreferredTime: boolean
 }
 
 /**
@@ -109,17 +126,40 @@ export interface Suggestion {
 export function suggest(participants: Participant[], options: SuggestOptions): Suggestion[] {
   const durationMs = options.durationMinutes * 60000
   const minFree = options.minFree ?? 1
+  const weekdays = options.weekdays && options.weekdays.length > 0 ? options.weekdays : null
+  const preferred = parsePreferred(options.preferredStart)
 
-  const candidates = coverage(participants)
-    .filter((span) => span.end - span.start >= durationMs && span.free.length >= minFree)
-    .map((span) => ({
-      start: span.start,
-      end: span.start + durationMs,
+  const candidates: Suggestion[] = []
+  for (const span of coverage(participants)) {
+    if (span.end - span.start < durationMs) continue
+    if (span.free.length < minFree) continue
+    if (weekdays && !weekdays.includes(new Date(span.start).getDay())) continue
+
+    const preferredStart = preferred === null ? null : atMinutes(span.start, preferred)
+    const usePreferred =
+      preferredStart !== null &&
+      preferredStart >= span.start &&
+      preferredStart + durationMs <= span.end
+
+    const start = usePreferred ? (preferredStart as number) : span.start
+    candidates.push({
+      start,
+      end: start + durationMs,
       free: span.free,
       busy: span.busy,
-    }))
+      atPreferredTime: usePreferred,
+    })
+  }
 
-  candidates.sort((a, b) => b.free.length - a.free.length || a.start - b.start)
+  // Turnout first, then the template's own time of day, then soonest. Earliest
+  // as the final tiebreak rather than latest: the same turnout in two weeks
+  // beats two months, and runway is why the host is asking.
+  candidates.sort(
+    (a, b) =>
+      b.free.length - a.free.length ||
+      Number(b.atPreferredTime) - Number(a.atPreferredTime) ||
+      a.start - b.start,
+  )
 
   // One suggestion per day: three times on the same Saturday is one option
   // dressed as three, and it crowds out the next real alternative.
@@ -134,4 +174,20 @@ export function suggest(participants: Participant[], options: SuggestOptions): S
     if (out.length >= options.limit) break
   }
   return out
+}
+
+function parsePreferred(value: string | undefined): number | null {
+  if (!value) return null
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) return null
+  return h * 60 + min
+}
+
+/** That many minutes past midnight on the day containing `ms`, local time. */
+function atMinutes(ms: number, minutes: number): number {
+  const d = new Date(ms)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, minutes, 0, 0).getTime()
 }

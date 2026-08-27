@@ -7,10 +7,18 @@ export type EventStatus = 'draft' | 'planning' | 'confirmed' | 'live' | 'wrapped
 export type PartyStatus = 'invited' | 'confirmed' | 'declined'
 export type ResponseValue = 'yes' | 'no' | 'maybe'
 export type LinkStatus = 'draft' | 'final'
-export type TokenScope = 'party' | 'crew' | 'recap' | 'booking'
+export type TokenScope = 'party' | 'crew' | 'recap' | 'booking' | 'huddle'
 
 /** Where a date response came from. Both count the same toward confirming. */
-export type ResponseSource = 'link' | 'host'
+/**
+ * Where an answer came from.
+ *
+ * `calendar` is a partner who connected their own calendar through the guest
+ * link rather than tapping yes or no. It counts the same toward confirming a
+ * date, and the matrix marks it so the host knows it was read rather than
+ * decided.
+ */
+export type ResponseSource = 'link' | 'host' | 'calendar'
 
 /**
  * Owner of a task or run-of-show item. Stored as a prefixed string so one
@@ -352,6 +360,40 @@ export interface FriendLink {
   kinds: MeetKindName[]
   tokenId: string
   createdAt: string
+}
+
+/**
+ * A group finding a time together, live.
+ *
+ * Unlike every other guest link, one huddle link goes to everyone: that is the
+ * point, "drop your calendar into this and let's see". It is safe to share
+ * because it expires, and because the only thing anyone contributes is free
+ * time with no titles attached.
+ */
+export interface Huddle {
+  id: string
+  ownerUid: string
+  title: string
+  durationMinutes: number
+  horizonDays: number
+  /** Weekdays worth considering, 0 = Sunday. Empty means any day. */
+  weekdays: number[]
+  tokenId: string
+  participants: HuddleParticipant[]
+  /** Slot start in epoch milliseconds, as a string key, to the ids that voted. */
+  votes: Record<string, string[]>
+  /** Set once the group picks, which is what an event gets created from. */
+  settledStartsAt: string | null
+  createdAt: string
+  expiresAt: string | null
+}
+
+export interface HuddleParticipant {
+  id: string
+  name: string
+  /** Their free time, derived in their own browser. Never their events. */
+  free: { s: number; e: number }[]
+  joinedAt: string
 }
 
 /** F19. A booked slot. Blocks the time for every other friend. */

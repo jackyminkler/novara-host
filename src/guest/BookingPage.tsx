@@ -11,6 +11,7 @@ import {
 import { Card, SubTitle, cx } from '../ui/primitives'
 import { Field, Input, Select, Textarea } from '../ui/form'
 import { formatDayLong, formatTime, toLocalInputValue } from '../lib/dates'
+import { currentZone, sameWallClock, timeInZone, zoneAbbreviation } from '../lib/availability'
 import { track } from '../lib/analytics'
 
 // F18. Mobile first at 390 px, no account, private to whoever holds the link.
@@ -136,9 +137,18 @@ export default function BookingPage({
           <p className="font-display text-[15px] font-semibold text-ink">
             {formatDayLong(new Date(picked).toISOString())}
           </p>
-          <p className="mb-4 text-[12.5px] text-sec">
-            {formatTime(new Date(picked))} to {formatTime(new Date(picked + minutes * 60000))}
+          <p className="mb-1 text-[12.5px] text-sec">
+            {formatTime(new Date(picked))} to {formatTime(new Date(picked + minutes * 60000))}{' '}
+            {zoneAbbreviation(new Date(picked), currentZone())}
           </p>
+          {/* Both clocks on the confirmation screen, which is the last moment
+              anyone can catch a three hour mistake. */}
+          {!sameWallClock(view.hostZone, currentZone()) && (
+            <p className="mb-4 text-[12px] text-mut">
+              That is {timeInZone(new Date(picked), view.hostZone)}{' '}
+              {zoneAbbreviation(new Date(picked), view.hostZone)} for them.
+            </p>
+          )}
 
           <Field label="Your name">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="So they know who is coming" />
@@ -174,6 +184,12 @@ export default function BookingPage({
       <SubTitle className="mb-[2px]">Find a time with {view.hostName}</SubTitle>
       <p className="mb-4 text-[12.5px] text-sec">
         These are the stretches that are open. Pick anything inside one.
+        {!sameWallClock(view.hostZone, currentZone()) && (
+          <>
+            {' '}
+            Shown in your time, {zoneAbbreviation(new Date(), currentZone())}.
+          </>
+        )}
       </p>
 
       {view.mine.length > 0 && (

@@ -51,9 +51,32 @@ single-field indexes Firestore builds automatically. If an `orderBy` is ever add
 query, it becomes a composite index and belongs back in this file before the query ships.
 
 **One schema change to an existing collection, no rules change.** `hp_guestTokens` documents
-now carry `eventId: null` for the `booking` scope, where every other scope carries an event id.
-Nothing in the current ruleset reads `eventId`, so no block changes. Worth knowing because it is
-the first guest token that is not scoped to an event.
+now carry `eventId: null` for the `booking` and `huddle` scopes, where every other scope carries
+an event id, plus a nullable `expiresAt`. Nothing in the current ruleset reads either field, so no
+block changes. Worth knowing because these are the first guest tokens not scoped to an event.
+
+### Personal availability, part two: `hp_huddles`
+
+Written 2026-08-26. One more top-level collection, same shape of block as the three above.
+
+```
+match /hp_huddles/{huddleId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+```
+
+**Guests are again absent on purpose, and here it matters more.** A huddle link is the one link
+in the product handed to a whole group rather than one person, and the people on it write to the
+document: joining adds a participant, voting changes a tally. None of that goes through Firestore.
+`hpGuestSubmit` does it with the Admin SDK, bounded by hand: names are capped at 80 characters,
+free-time lists at 500 entries, a vote must be a run of digits, and one participant holds one vote
+that moves rather than accumulates. The rules above only answer whether the signed-in host can
+reach her own huddles.
+
+**Still no composite index.** `hp_huddles` is only ever read by `ownerUid` for the host list and
+by document id for the guest function.
 
 ## Applied
 

@@ -85,6 +85,47 @@ describe('suggest', () => {
     expect(out).toEqual([])
   })
 
+  it('lands on the template start time when the window can hold it', () => {
+    const out = suggest([person('a', ['2026-09-10T06:00:00', '2026-09-10T18:00:00'])], {
+      durationMinutes: 60,
+      limit: 1,
+      preferredStart: '07:00',
+    })
+    expect(new Date(out[0]!.start).getHours()).toBe(7)
+    expect(out[0]!.atPreferredTime).toBe(true)
+  })
+
+  it('still answers when the preferred time will not fit, and says so', () => {
+    // A sunrise template against a day that only opens at nine: a later start
+    // beats no answer, and the flag lets the UI rank it below a true match.
+    const out = suggest([person('a', ['2026-09-10T09:00:00', '2026-09-10T18:00:00'])], {
+      durationMinutes: 60,
+      limit: 1,
+      preferredStart: '07:00',
+    })
+    expect(new Date(out[0]!.start).getHours()).toBe(9)
+    expect(out[0]!.atPreferredTime).toBe(false)
+  })
+
+  it('ranks a true template match above a later one with the same turnout', () => {
+    const out = suggest(
+      [person('a', ['2026-09-10T09:00:00', '2026-09-10T18:00:00'], ['2026-09-11T06:00:00', '2026-09-11T18:00:00'])],
+      { durationMinutes: 60, limit: 2, preferredStart: '07:00' },
+    )
+    expect(out[0]!.atPreferredTime).toBe(true)
+    expect(new Date(out[0]!.start).getDate()).toBe(11)
+  })
+
+  it('keeps to the weekdays a template cares about', () => {
+    // 2026-09-12 is a Saturday, 2026-09-10 a Thursday.
+    const out = suggest(
+      [person('a', ['2026-09-10T09:00:00', '2026-09-10T18:00:00'], ['2026-09-12T09:00:00', '2026-09-12T18:00:00'])],
+      { durationMinutes: 60, limit: 5, weekdays: [6] },
+    )
+    expect(out).toHaveLength(1)
+    expect(new Date(out[0]!.start).getDay()).toBe(6)
+  })
+
   it('honours a minimum turnout', () => {
     const out = suggest(three, { durationMinutes: 60, limit: 5, minFree: 3 })
     expect(out.every((o) => o.free.length === 3)).toBe(true)

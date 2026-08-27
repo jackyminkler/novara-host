@@ -2,6 +2,64 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-26, partner calendars, template shapes, and the group huddle
+
+The rest of the multi-party list, in one pass. Push notifications were floated and withdrawn
+mid-session, so expiry ships with a reset button and no reminder.
+
+**Two scopes, two audiences, and that is the whole unlock.** The host requests sensitive scopes
+and pays for them: an unverified app screen, and one of the project's 100 lifetime
+unapproved-sensitive grants. A guest requests `calendar.freebusy`, which Google treats as
+non-sensitive, so there is no warning screen, no verification, and no cap however many people use
+it. That is what makes "everyone drop your calendar into this link" work at any size while the
+host flow stays gated. `src/lib/googleIdentity.ts` is now the shared token layer; the two callers
+differ only in which scope string they ask for.
+
+**freebusy is also the right privacy answer, not a compromise.** It returns start and end pairs
+and nothing else. There is no version of the group flow that leaks what anyone is doing, because
+the API never had it to give.
+
+**A partner answering dates from their calendar reuses `respond_dates`.** No new action, no new
+endpoint. The only addition is a `calendar` value on `ResponseSource`, so the matrix can mark an
+answer that was read rather than decided. It counts the same toward confirming a date.
+
+**Weekday filtering is asked for, not inferred.** The first attempt tried to read a template's
+preferred weekdays from its task offsets, which cannot work: offsets are relative to the event, so
+they say nothing about which day it lands on. That function was deleted rather than left returning
+an empty list with a confident name. Both the event dates step and the huddle now carry weekday
+chips, which is what answers "the next three Saturdays".
+
+**A template's start time is a preference, not a filter.** A sunrise template wants 7am, but a
+Saturday only open from 9 is still a better answer than no answer. Suggestions fall back to the
+window's own start and rank below true matches, and the chip says "later than usual" rather than
+silently shifting the time.
+
+**The huddle computes its own ranking in the browser.** Every participant's free time is already
+in the view, so ranking locally avoids a second copy of `suggest` in the functions build root.
+That is the same drift that forces `guestTypes.ts` to exist twice, and one copy of it is enough.
+
+**One vote each, and it moves.** A tally where somebody voted for everything is not a tally.
+Joining twice replaces rather than duplicates, so re-reading a calendar after moving a meeting
+updates an answer instead of adding a person.
+
+**Guest writes are bounded by hand, because Admin SDK bypasses rules.** Names capped at 80
+characters, free-time lists at 500 entries, votes must be a run of digits, booking durations
+capped at eight hours. An unchecked list is a way to write a megabyte into someone else's
+document, and an unchecked duration is a way to put an event stretching to the end of time on
+her calendar.
+
+**Expiry moves in two places or not at all.** The huddle document and its token both carry
+`expiresAt`, because the token is what the guest function checks. Moving one without the other
+leaves a live page behind a dead link, or the reverse.
+
+**Zone labels only where they can save someone.** The booking confirmation shows both clocks when
+the friend's zone differs from the host's, since that screen is the last moment anyone can catch a
+three hour mistake. Where the zones agree, nothing is shown: a label on every time is noise that
+trains people to stop reading labels.
+
+**Owed to Jacky:** `hp_huddles` needs a rules block, in `docs/pending-rules.md`.
+
+
 ## 2026-08-26, the multi-party primitive, time zones, and link expiry
 
 Jacky wants the group surfaces: suggest dates for an event, a template asking for the next few

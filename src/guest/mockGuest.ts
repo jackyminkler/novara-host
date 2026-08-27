@@ -1,6 +1,6 @@
 import { mockStore, mockPersist } from '../data/mock/mockApi'
 import { GuestError } from './guestClient'
-import type { BookingView, GuestAction, GuestPayload, GuestView } from './guestTypes'
+import type { BookingView, GuestAction, GuestPayload, GuestView, HuddleView } from './guestTypes'
 import { fitsInWindow, windowsForFriend } from '../lib/availability'
 import type { Booking } from '../data/types'
 import { orgTypeLabel, ownerLabel } from '../data/profiles'
@@ -32,6 +32,7 @@ function buildBooking(token: string): BookingView {
     scope: 'booking',
     hostName: 'your host',
     friendName: link.name,
+    hostZone: settings.timeZone,
     kinds: settings.kinds,
     windows: windowsForFriend(
       (settings.windows ?? []).map((w) => ({ start: w.s, end: w.e })),
@@ -46,6 +47,31 @@ function buildBooking(token: string): BookingView {
         endsAt: b.endsAt,
         durationMinutes: b.durationMinutes,
       })),
+  }
+}
+
+/** A huddle: one link, everyone on it, and nothing kept past its expiry. */
+function buildHuddle(token: string, youId: string | null): HuddleView {
+  const store = mockStore()
+  const record = store.tokens.find((t) => t.id === token)
+  if (!record || record.revoked || expired(record)) throw new GuestError('invalid')
+  const huddle = store.huddles.find((h) => h.id === record.subjectId)
+  if (!huddle) throw new GuestError('invalid')
+
+  return {
+    scope: 'huddle',
+    huddleId: huddle.id,
+    title: huddle.title,
+    durationMinutes: huddle.durationMinutes,
+    horizonDays: huddle.horizonDays,
+    weekdays: huddle.weekdays,
+    // Everyone's free time goes to everyone, which is the deal a huddle makes:
+    // you can see when the others are free, never what they are doing.
+    participants: huddle.participants.map((p) => ({ id: p.id, name: p.name, free: p.free })),
+    votes: huddle.votes,
+    settledStartsAt: huddle.settledStartsAt,
+    expiresAt: huddle.expiresAt,
+    you: youId,
   }
 }
 
@@ -129,10 +155,11 @@ function build(token: string): GuestView {
   return view
 }
 
-export function mockGuestView(token: string): Promise<GuestPayload> {
+export function mockGuestView(token: string, you?: string): Promise<GuestPayload> {
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
   if (record?.scope === 'booking') return Promise.resolve(buildBooking(token))
+  if (record?.scope === 'huddle') return Promise.resolve(buildHuddle(token, you ?? null))
   return Promise.resolve(build(token))
 }
 
@@ -144,6 +171,7 @@ export function mockGuestSubmit(
   const store = mockStore()
   const record = store.tokens.find((t) => t.id === token)
   if (record?.scope === 'booking') return Promise.resolve(bookingSubmit(token, action, payload))
+  if (record?.scope === 'huddle') return Promise.resolve(huddleSubmit(token, action, payload))
   if (!record || record.revoked) throw new GuestError('invalid')
   // A recap link is read only, exactly as the real function enforces.
   if (record.scope === 'recap') throw new GuestError('invalid')
@@ -157,8 +185,9 @@ export function mockGuestSubmit(
 
   if (action === 'respond_dates' && party) {
     const responses = (payload.responses ?? {}) as Record<string, 'yes' | 'no' | 'maybe'>
+    const source = payload.source === 'calendar' ? 'calendar' : 'link'
     for (const [optionId, value] of Object.entries(responses)) {
-      party.dateResponses[optionId] = { value, source: 'link', note: '', at: now }
+      party.dateResponses[optionId] = { value, source, note: '', at: now }
     }
     if (typeof payload.constraintNote === 'string') party.constraintNote = payload.constraintNote
   }
@@ -237,4 +266,56 @@ function bookingSubmit(
   record.lastUsedAt = new Date().toISOString()
   mockPersist()
   return buildBooking(token)
+}
+
+function huddleSubmit(
+  token: string,
+  action: GuestAction,
+  payload: Record<string, unknown>,
+): HuddleView {
+  const store = mockStore()
+  const record = store.tokens.find((t) => t.id === token)
+  if (!record || record.revoked || expired(record)) throw new GuestError('invalid')
+  const huddle = store.huddles.find((h) => h.id === record.subjectId)
+  if (!huddle) throw new GuestError('invalid')
+
+  let you = typeof payload.you === 'string' ? payload.you : null
+
+  if (action === 'join_huddle') {
+    const name = String(payload.name ?? '').slice(0, 80).trim()
+    const free = Array.isArray(payload.free)
+      ? (payload.free as { s: number; e: number }[]).filter(
+          (w) => typeof w?.s === 'number' && typeof w?.e === 'number' && w.e > w.s,
+        )
+      : []
+    if (name) {
+      const existing = you ? huddle.participants.find((p) => p.id === you) : null
+      if (existing) {
+        // Rejoining replaces rather than duplicates: someone re-reading their
+        // calendar after moving a meeting should update, not appear twice.
+        existing.name = name
+        existing.free = free
+      } else {
+        you = `hp-${Date.now().toString(36)}${huddle.participants.length}`
+        huddle.participants.push({ id: you, name, free, joinedAt: new Date().toISOString() })
+      }
+    }
+  }
+
+  if (action === 'cast_vote' && you) {
+    const key = String(payload.slot ?? '')
+    if (/^\d+$/.test(key)) {
+      // One vote each, moved rather than accumulated: a tally where someone
+      // voted for everything is not a tally.
+      for (const ids of Object.values(huddle.votes)) {
+        const at = ids.indexOf(you)
+        if (at >= 0) ids.splice(at, 1)
+      }
+      huddle.votes[key] = [...(huddle.votes[key] ?? []), you]
+    }
+  }
+
+  record.lastUsedAt = new Date().toISOString()
+  mockPersist()
+  return buildHuddle(token, you)
 }
