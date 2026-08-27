@@ -1,5 +1,9 @@
 import type {
   AvailabilityBlock,
+  AvailabilitySettings,
+  Booking,
+  FriendLink,
+  Huddle,
   CapturedContact,
   CitywideMoment,
   CrewMember,
@@ -58,6 +62,24 @@ export interface RunItemInput {
 }
 
 export type ContactInput = Omit<CapturedContact, 'id' | 'capturedAt' | 'capturedBy' | 'ownerUid'>
+export type FriendLinkInput = Pick<FriendLink, 'name' | 'horizonDays' | 'kinds'>
+export type HuddleInput = Pick<
+  Huddle,
+  'title' | 'durationMinutes' | 'horizonDays' | 'weekdays' | 'expiresAt'
+>
+/** The writable slice of the availability document. Busy intervals are derived, never typed. */
+export type AvailabilitySettingsPatch = Partial<
+  Pick<AvailabilitySettings, | 'openHours'
+  | 'timeZone'
+  | 'bufferMinutes'
+  | 'kinds'
+  | 'defaultHorizonDays'
+  | 'windows'
+  | 'source'
+  | 'googleCalendarIds'
+  | 'calendarImportedAt'
+  | 'importedEventCount'>
+>
 export type AvailabilityInput = Omit<AvailabilityBlock, 'id' | 'ownerUid'>
 export type MomentInput = Omit<CitywideMoment, 'id' | 'ownerUid'>
 
@@ -140,6 +162,29 @@ export interface HostApi {
   listMoments(): Promise<CitywideMoment[]>
   createMoment(input: MomentInput): Promise<string>
   deleteMoment(id: string): Promise<void>
+
+  // F14 to F19, personal availability. One settings document per host, keyed
+  // by uid. It holds her editable rules plus the openings she is publishing.
+  // The calendar itself is parsed and derived in the browser and never sent.
+  getAvailabilitySettings(): Promise<AvailabilitySettings | null>
+  saveAvailabilitySettings(patch: AvailabilitySettingsPatch, uid: string): Promise<void>
+
+  listFriendLinks(): Promise<FriendLink[]>
+  /** Returns the new link and its token, which is only ever shown as a URL. */
+  createFriendLink(input: FriendLinkInput, uid: string): Promise<{ id: string; token: string }>
+  updateFriendLink(id: string, patch: Partial<FriendLinkInput>): Promise<void>
+  /** Revokes the token as well, so the link stops working immediately. */
+  deleteFriendLink(id: string): Promise<void>
+
+  listBookings(): Promise<Booking[]>
+  cancelBooking(id: string): Promise<void>
+
+  // A group finding a time together. One link for everyone, and it expires.
+  listHuddles(): Promise<Huddle[]>
+  createHuddle(input: HuddleInput, uid: string): Promise<{ id: string; token: string }>
+  /** Pushes the expiry out again without changing the link. */
+  extendHuddle(id: string, expiresAt: string): Promise<void>
+  deleteHuddle(id: string): Promise<void>
 
   // CRM-1, people. listPeople returns the owner's whole list in one read and
   // the page filters in memory: at this size that needs no composite index and

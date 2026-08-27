@@ -1,4 +1,8 @@
 import type {
+  AvailabilitySettings,
+  Booking,
+  FriendLink,
+  Huddle,
   AvailabilityBlock,
   CapturedContact,
   CitywideMoment,
@@ -36,6 +40,10 @@ export interface MockStore {
   tokens: GuestToken[]
   people: Person[]
   feedback: Feedback[]
+  availabilitySettings: AvailabilitySettings | null
+  friendLinks: FriendLink[]
+  bookings: Booking[]
+  huddles: Huddle[]
 }
 
 const HOST = 'mock-host-uid'
@@ -634,6 +642,7 @@ export function buildStore(): MockStore {
       revoked: false,
       createdAt: NOW,
       lastUsedAt: null,
+      expiresAt: null,
     })),
   )
 
@@ -659,5 +668,12 @@ export function buildStore(): MockStore {
     tokens,
     people: buildPeople(),
     feedback: [],
+    // Availability starts empty on purpose: the first thing the page asks for
+    // is a real calendar, and a fixture calendar would make the derivation
+    // look like it works before it has seen anything true.
+    availabilitySettings: null,
+    friendLinks: [],
+    bookings: [],
+    huddles: [],
   }
 }
