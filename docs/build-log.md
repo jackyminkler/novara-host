@@ -2,6 +2,65 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-27, matching: rank runs in the host app on a vendored engine
+
+M-match-0 from `docs/Host_App_Matching_Feature_Spec_v1.md`. An event workspace gets a Matching
+tab, after Run of show, and rank scores the guests already imported against that event.
+
+**The engine is vendored, not rewritten.** `novara-matching/console/matchcore.js` is copied
+verbatim to `src/lib/matching/matchcore.js` at sha256 `482b9468…`, with only a comment header
+prepended; the body below the header hashes identically to the source. That was the 2026-08-24
+decision (one engine, no fork) applied literally: rank is 281 lines already ported and parity
+verified, so porting it again would have been a third dialect of the most correctness critical
+code we own. There are now three copies of rank instead of two, so the drift rule widens to
+cover this one, which is why the header says so and why the checksum is written down in two
+places.
+
+**No functional edit was needed, module format included.** The file is a UMD bundle, so under
+Vite it assigns itself to `self` and the app imports it for its side effect and reads the global
+back through a typed wrapper. Adding an `export` line was the alternative and was rejected: the
+entire value of the file is being byte-identical to its source.
+
+**Signup answers keep their own wording.** The serializer turns approved registrations for the
+event's `sourceKey` into rows of `Name`, `Email`, and every answer under the question text the
+host actually asked. The engine resolves columns by case-insensitive substring precisely so that
+"Fastest pace you would run" is understood without a mapping table, and a reworded question next
+season does not need a code change. Rows share one header set because the engine reads columns
+off row one alone.
+
+**Three empty states, because they are three problems.** No guest list linked points at the
+import on the overview tab. A linked list with nobody approved names the slug it is stored under.
+A list whose form asked none of the matching questions says so and lists the questions to add,
+which is the M-match-2 surfacing arriving early rather than a blank page. A form that asked some
+of them runs on those and says which parts were skipped. Someone who answered nothing comes back
+with no matches and a line explaining why, which is the honest version of trap 13.
+
+**Sparks and pods show their questions and no run button.** They need the Cloud Run service
+(M-match-1), which is not deployed, and the template's `requiredQuestions` are the part worth
+having before the event rather than after.
+
+**Verified in mock mode** on the wrapped marina event: 9 approved guests in, 8 matched, the
+ninth being the seeded person who left every optional question blank. All four states checked in
+the browser, no horizontal overflow at 1000 px. Mock `STORAGE_KEY` is now `v5`: the marina
+signups carry matching answers, and the stored run fixture moved to that event and into the shape
+the engine really returns, since the old fixture's `{ pairs, unmatched }` shape was not one the
+tab could open.
+
+**Deviation, deliberate.** The feature spec names the Amplitude events without a prefix
+(`matching_run_started` and friends). They ship as `hp_matching_run_started`,
+`hp_matching_run_completed`, `hp_matching_results_viewed`, because every other event in this repo
+carries `hp_` and one naming scheme beats matching a document. Same call as the CRM events.
+
+**Nothing owed to `docs/pending-rules.md`.** The `matching` subcollection block was queued in the
+first phase of this build and is unchanged. Payloads over 800 kB are refused before the write, so
+a run can never approach the 1 MB document limit.
+
+**One thing for the next inbox sweep.** `MATCHING.md` §08 records the concierge tools as diverged
+from the app engine on the pace curve. `formats/rank.py` and `console/matchcore.js` both carry
+the 60 s/mile half-life and the separate 90 s/mile gate today, so the row and the code disagree
+and, by the rule at the top of that document, the code wins. Filed in `MATCHING_INBOX.md`, not
+corrected by hand.
+
 ## 2026-08-25, the four guest exports imported and verified against the emulator
 
 CRM sprint 1, step 2. `seed/import-luma-guests.ts` ran against the emulator on all four brain

@@ -55,8 +55,11 @@ import { mergeRows, normalizeEmail, personFromContact } from '../people/merge'
 // v2 added the M1 fields: template matching, deliverables, spend log. v3 adds
 // the CRM ones: promoted captures, the standing-availability history, and the
 // follow-ups the hub reads. v4 adds a confirmed event that is still ahead,
-// which is what the share card names as context and the invite line reads.
-const STORAGE_KEY = 'novara-hosts-mock-v4'
+// which is what the share card names as context and the invite line reads. v5
+// adds the matching answers on the marina signups, moves the stored run to the
+// event that can produce another one, and puts it in the shape the engine
+// really returns.
+const STORAGE_KEY = 'novara-hosts-mock-v5'
 
 function load(): MockStore {
   try {

@@ -10,6 +10,9 @@ runners. Write the "What it does" section for them.
 
 - [`templates.md`](templates.md) — the host's own plans: the library, the editor, save as
   template, and the matching configuration a template declares.
+- [`matching.md`](matching.md) — pairing up the people who signed up: the vendored rank engine,
+  the columns it reads out of signup answers, the three ways a run comes up empty, and why sparks
+  and pods stay behind the Python service.
 - [`recap-and-roi.md`](recap-and-roi.md) — what an event cost and what it returned:
   deliverables both directions, the spend log, show rate by source, per party outcomes, and
   the site lessons loop with its permit and date warnings.

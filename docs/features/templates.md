@@ -78,7 +78,7 @@ Every place this feature touches. **A change to any row means checking every oth
 | Storage | `hp_templates/{templateId}`, owner scoped by `ownerUid` | One document per template | A list query that stops filtering on `ownerUid` crosses hosts |
 | Rules | Consumer repo `firestore.rules`, `hp_templates` block, applied 2026-08-20 | Owner read and write | This repo never deploys rules. A new collection or index goes to `docs/pending-rules.md` first |
 | Analytics | `hp_template_created`, `hp_template_edited`, `hp_template_deleted`, `hp_event_saved_as_template` | Whether a host reuses a plan at all | Renaming one breaks the only evidence save as template earned its place |
-| Matching | `Template.matching` (`mode`, `profileName`, `requiredQuestions`) | Declared here, consumed by the matching run later | Nothing in the editor couples to the engine; it names a mode and lists questions |
+| Matching | `Template.matching` (`mode`, `profileName`, `requiredQuestions`) | Declared here, read by the event's Matching tab ([`matching.md`](matching.md)) | Nothing in the editor couples to the engine; it names a mode and lists questions. The mode a template declares is what an event made from it runs, so a mode renamed here changes what that tab offers |
 
 Fields this feature reads or writes are declared in `src/data/types.ts` (`Template`, `RoleSlot`,
 `TaskSkeletonItem`, `RunSkeletonItem`, `TemplateMatching`). This repo has no field registry of
@@ -129,7 +129,7 @@ template carries no partner names and no personal content.
 | --- | --- | --- |
 | `novara` | None. Templates are host coordination and touch no consumer collection | Not built |
 | `novara-pulse` | None | Not built |
-| `novara-matching` | `Template.matching` names a mode and a profile the engine will read. The names must match the engine's own, and the required questions must reach the signup form for a run to have anything to score | Designed, engine not connected |
+| `novara-matching` | `Template.matching` names a mode and a profile the engine reads. The names must match the engine's own, and the required questions must reach the signup form for a run to have anything to score | Live for rank, which runs in-app on the vendored engine. Sparks and pods still wait on the service |
 
 ---
 
@@ -139,3 +139,5 @@ Append-only. One dated line per meaningful change. Newest last.
 
 - `2026-08-26` — templates became editable: library page, editor, save as template from an event
   workspace, and matching configuration declared on the template. Read only before this.
+- `2026-08-27` — `Template.matching` stopped being a declaration only. An event's Matching tab
+  reads it for the mode, the profile, and the questions to put on the signup form.

@@ -146,6 +146,57 @@ on the capture page.
 
 ---
 
+## Matching
+
+**Built, unreleased. Rank only; sparks and pods wait on the engine service**
+
+### What it does
+
+Matching pairs up the people who signed up for your event. Open an event and go to the Matching
+tab. Press "Run matching" and everyone on the list comes back with their closest matches and the
+reason each one is a match, in plain words: their paces overlap, they are both free Saturday
+morning, they are both in the Marina.
+
+**Where the people come from.** Matching reads the signup list you imported against this event,
+and only the people on it who are signed up. Invited and declined are left out. If the event has
+no list linked yet, the tab says so and points you at the import on the overview tab. Nothing is
+uploaded here and nothing is typed in twice.
+
+**What it scores on.** The answers people gave on your signup form. Five things count: pace, when
+they can run, what kind of runs they like, their neighborhood, and the topics they can talk about
+or want to learn. Your own question wording is what matters, not a fixed format: a form that asks
+"Fastest pace you would run" is understood as a pace question. Anything the form did not ask
+simply drops out, and the rest carries the weight. Two people with one answer in common are not
+ranked above two people who lined up on everything, because a match built on almost nothing is
+held back rather than allowed to win.
+
+**When the form did not ask.** If a signup form asked none of the matching questions, the tab
+says that plainly and lists the questions to add next time instead of showing you an empty page.
+If it asked some of them, the run goes ahead on those and tells you which parts were skipped. A
+person who left every question blank comes back with no matches and a line saying why, rather
+than being quietly filed as a bad match.
+
+**Where the mode comes from.** If the event was made from one of your templates, the template
+decides how this event pairs people up and the tab says so at the top. If it was not, you pick
+here, and the pick lasts as long as you are on the page. Setting it on a template is the durable
+way: every event made from that template starts there, and the template also carries the list of
+questions the mode needs, which is the part worth getting onto the signup form before the event
+rather than after.
+
+**Rank runs now. Sparks and pods do not, yet.** Rank is the one that gives everybody their
+closest matches. Sparks (mutual introductions across a room) and pods (splitting a room into
+small groups) run on a separate engine that is not connected yet. Choosing one of those shows
+you the questions their signup form needs so the answers exist by the time it is, and nothing
+else. That is on purpose: those two are the most correctness critical thing we run, and keeping
+one copy of them beats keeping two copies in step.
+
+**Who sees results.** Only you. Every run stays with its event, a new run never overwrites an
+old one, and nothing from a run appears on a guest page or a partner link.
+
+---
+
+---
+
 ## Recap and ROI
 
 **Built, unreleased**

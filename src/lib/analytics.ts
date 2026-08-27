@@ -48,6 +48,15 @@ export type AnalyticsEvent =
   | 'hp_card_contact_left'
   // M1 voice notes.
   | 'hp_voice_note_recorded'
+  // M-match-0, rank in the host app. Three events answer whether pairing
+  // people up is a thing a host does once out of curiosity or a thing they
+  // come back to: a run started that never completes is an engine or a data
+  // problem, and a run completed that is never viewed is a feature nobody
+  // wanted. The Host App Matching Feature Spec writes these without the hp_
+  // prefix; they carry it here because one naming scheme beats matching a doc.
+  | 'hp_matching_run_started'
+  | 'hp_matching_run_completed'
+  | 'hp_matching_results_viewed'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

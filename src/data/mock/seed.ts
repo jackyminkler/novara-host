@@ -125,6 +125,64 @@ function registration(
 }
 
 /**
+ * M-match-0. The matching answers on the marina signup form, as a real form
+ * would have carried them: the host's own question wording is the column, and
+ * the engine resolves it by substring, so nothing here is renamed on the way
+ * in. Fictional content like every other row, and every value is shaped the
+ * way the engine parses it: pace as mm:ss, everything multi-select as a comma
+ * separated list.
+ */
+const PACE_QUESTIONS = ['Fastest pace you would run', 'Slowest pace you would run']
+const WHEN_QUESTION = 'When can you usually run?'
+const KIND_QUESTION = 'What kind of runs do you like?'
+const HOOD_QUESTION = 'What neighborhood are you in?'
+const SHARE_QUESTION = 'What topics do you have experience with?'
+const LEARN_QUESTION = 'What topics would you like to learn about?'
+
+const PACE_RANGES = [
+  ['7:45', '8:30'],
+  ['8:15', '9:00'],
+  ['8:45', '9:30'],
+  ['9:30', '10:15'],
+  ['10:00', '11:00'],
+]
+const WHEN_ANSWERS = [
+  'Saturday morning, Sunday morning',
+  'Weekday mornings, Saturday morning',
+  'Sunday morning, Wednesday evening',
+  'Weekday mornings, Wednesday evening',
+]
+const KIND_ANSWERS = ['Easy, Long', 'Track, Tempo', 'Easy, Social', 'Long, Social', 'Easy, Track']
+const HOOD_ANSWERS = ['Marina', 'Mission', 'Sunset', 'Marina', 'Potrero']
+const SHARE_ANSWERS = [
+  'Design, Hiring',
+  'Fundraising, Community',
+  'Marketing, Events',
+  'Engineering, Hiring',
+  'Community, Nutrition',
+]
+const LEARN_ANSWERS = [
+  'Fundraising, Marketing',
+  'Design, Engineering',
+  'Hiring, Community',
+  'Events, Fundraising',
+  'Marketing, Design',
+]
+
+function matchingAnswers(i: number): Record<string, string> {
+  const pace = PACE_RANGES[i % PACE_RANGES.length]
+  return {
+    [PACE_QUESTIONS[0]]: pace[0],
+    [PACE_QUESTIONS[1]]: pace[1],
+    [WHEN_QUESTION]: WHEN_ANSWERS[i % WHEN_ANSWERS.length],
+    [KIND_QUESTION]: KIND_ANSWERS[i % KIND_ANSWERS.length],
+    [HOOD_QUESTION]: HOOD_ANSWERS[i % HOOD_ANSWERS.length],
+    [SHARE_QUESTION]: SHARE_ANSWERS[i % SHARE_ANSWERS.length],
+    [LEARN_QUESTION]: LEARN_ANSWERS[i % LEARN_ANSWERS.length],
+  }
+}
+
+/**
  * Someone who got here by being met rather than by signing up: no email, no
  * registrations, tagged so where they came from stays readable. This is what
  * `personFromContact` produces, and `ct-priya` is the capture that produced it.
@@ -190,7 +248,14 @@ function buildPeople(): Person[] {
       )
       if (i % 3 === 0) {
         registrations.push(
-          registration(PERSON_EVENTS[1], 'approved', '2026-06-08', { source: 'referral' }),
+          registration(PERSON_EVENTS[1], 'approved', '2026-06-08', {
+            source: 'referral',
+            // One of the nine left every optional question blank, which is the
+            // state the matching tab has to survive: the engine scores nobody
+            // against them and nobody against them, rather than inventing a
+            // zero and filing them as a bad match (MATCHING.md trap 13).
+            answers: i === 15 ? {} : matchingAnswers(i),
+          }),
         )
       }
       if (i % 9 === 0) {
@@ -471,7 +536,10 @@ export function buildStore(): MockStore {
     ],
     talkTracks: [],
     shotList: [],
-    templateId: null,
+    // Made from the DJ morning template, which is what gives the matching tab
+    // its mode line: this event pairs people up because its plan says so,
+    // rather than because someone picked a mode on the day.
+    templateId: 'tpl-dj-morning',
     hostUid: HOST,
     hostDisplayName: 'Maya',
     createdAt: '2026-06-01T12:00:00.000Z',
@@ -950,29 +1018,81 @@ export function buildStore(): MockStore {
     },
   ]
 
-  // M1. One stored run, so the tab has history the first time it opens. The
-  // results payload is whatever the engine returned, kept and not interpreted.
+  // M-match-0. One stored run, so the tab has history the first time it opens,
+  // and on the event that can actually run another one. The payload is exactly
+  // what `matchcore.rank` returns: keyed by person, each with their top
+  // matches, the reasons built only from what both sides answered. Kept and
+  // never interpreted by the seam.
+  //
+  // An earlier, smaller run than the one the tab will produce today: four of
+  // the nine had signed up when it was taken.
+  const rankMatch = (
+    name: string,
+    email: string,
+    total: number,
+    confidence: number,
+    why: string,
+    breakdown: Record<string, number | null>,
+  ) => ({
+    name,
+    email,
+    total,
+    confidence,
+    lb: Math.round((total - 0.5 * (1 - confidence)) * 1e4) / 1e4,
+    breakdown,
+    why,
+  })
+
+  const full = { pace: 1, availability: 0.5, runType: 0.33, neighborhood: 1, topic: 0.5 }
+  const thin = { pace: 0.7071, availability: 0.5, runType: 0, neighborhood: 0, topic: 0.25 }
+
   const matching: Record<string, MatchingRun[]> = {
-    'presidio-sunrise-five': [
+    'presidio-sunrise-five': [],
+    'marina-track-social': [
       {
         id: 'mr1',
         mode: 'rank',
         profileName: 'pace',
-        engineVersion: 'matchcore, vendored',
-        createdAt: '2026-08-18T16:20:00.000Z',
-        peopleCount: 24,
-        matchedCount: 22,
+        engineVersion: 'matchcore rank, console copy 482b9468',
+        createdAt: '2026-06-18T16:20:00.000Z',
+        peopleCount: 4,
+        matchedCount: 4,
         results: {
-          pairs: [
-            { a: 'ada.okafor@example.com', b: 'dev.raman@example.com', score: 0.91, reasons: ['pace within 15 seconds', 'both new this season'] },
-            { a: 'bo.lindqvist@example.com', b: 'gia.petrov@example.com', score: 0.84, reasons: ['pace within 30 seconds'] },
-            { a: 'cara.mendes@example.com', b: 'hana.ishikawa@example.com', score: 0.78, reasons: ['pace within 30 seconds', 'same finish plans'] },
-          ],
-          unmatched: ['finn.oyelaran@example.com', 'ines.ferrer@example.com'],
+          'ada.okafor@example.com': {
+            name: 'Ada Okafor',
+            email: 'ada.okafor@example.com',
+            matches: [
+              rankMatch('Dev Raman', 'dev.raman@example.com', 0.8812, 1, 'pace ranges overlap; both free saturday morning; both in Marina', full),
+              rankMatch('Gia Petrov', 'gia.petrov@example.com', 0.7408, 0.9, 'paces within 60s/mile; both like easy', thin),
+            ],
+          },
+          'dev.raman@example.com': {
+            name: 'Dev Raman',
+            email: 'dev.raman@example.com',
+            matches: [
+              rankMatch('Ada Okafor', 'ada.okafor@example.com', 0.8812, 1, 'pace ranges overlap; both free saturday morning; both in Marina', full),
+              rankMatch('Jonah Brandt', 'jonah.brandt@example.com', 0.7115, 0.9, 'paces within 45s/mile; can talk hiring', thin),
+            ],
+          },
+          'gia.petrov@example.com': {
+            name: 'Gia Petrov',
+            email: 'gia.petrov@example.com',
+            matches: [
+              rankMatch('Ada Okafor', 'ada.okafor@example.com', 0.7408, 0.9, 'paces within 60s/mile; both like easy', thin),
+              rankMatch('Jonah Brandt', 'jonah.brandt@example.com', 0.6903, 0.9, 'paces within 75s/mile; both free sunday morning', thin),
+            ],
+          },
+          'jonah.brandt@example.com': {
+            name: 'Jonah Brandt',
+            email: 'jonah.brandt@example.com',
+            matches: [
+              rankMatch('Dev Raman', 'dev.raman@example.com', 0.7115, 0.9, 'paces within 45s/mile; can talk hiring', thin),
+              rankMatch('Gia Petrov', 'gia.petrov@example.com', 0.6903, 0.9, 'paces within 75s/mile; both free sunday morning', thin),
+            ],
+          },
         },
       },
     ],
-    'marina-track-social': [],
   }
 
   const log: Record<string, LogEntry[]> = {
