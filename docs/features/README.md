@@ -6,10 +6,15 @@ One file per feature. The model, the rule, and why the surface map matters are i
 The host platform's users are **hosts, co-hosts, sponsors, vendors and crew** — not
 runners. Write the "What it does" section for them.
 
+## Written
+
+- [`templates.md`](templates.md) — the host's own plans: the library, the editor, save as
+  template, and the matching configuration a template declares.
+
 ## Owed
 
-No feature docs written yet. The features that most need one, because more than one surface
-reads the same data to produce them:
+The features that most need one, because more than one surface reads the same data to produce
+them:
 
 - **Guest links** — the two-HTTP-function token model (`hpGuestView` / `hpGuestSubmit`),
   scope handling, and the no-account guarantee. Any change here touches rules, both

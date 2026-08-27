@@ -11,6 +11,7 @@ import {
   Contact,
   ChevronsRight,
   House,
+  LayoutTemplate,
   LogOut,
   NotebookPen,
   Sparkles,
@@ -34,6 +35,8 @@ import PersonDetailPage from "./pages/PersonDetailPage";
 import PartnerDetailPage from "./pages/PartnerDetailPage";
 import PartnerFormPage from "./pages/PartnerFormPage";
 import CapturePage from "./pages/CapturePage";
+import TemplatesPage from "./pages/TemplatesPage";
+import TemplateEditorPage from "./pages/TemplateEditorPage";
 import RecapEditorPage from "./event/RecapEditorPage";
 
 interface NavItem {
@@ -46,6 +49,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/app", label: "Today", icon: House, end: true },
   { to: "/app/events", label: "Events", icon: Sparkles },
+  { to: "/app/templates", label: "Templates", icon: LayoutTemplate },
   { to: "/app/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/app/partners", label: "Partners", icon: Users },
   { to: "/app/people", label: "People", icon: Contact },
@@ -205,6 +209,11 @@ export default function HostShell() {
           <Route path="events/new" element={<NewEventPage />} />
           <Route path="events/:eventId/recap" element={<RecapEditorPage />} />
           <Route path="events/:eventId/*" element={<EventWorkspace />} />
+          <Route path="templates" element={<TemplatesPage />} />
+          <Route
+            path="templates/:templateId"
+            element={<TemplateEditorPage />}
+          />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="partners" element={<PartnersPage />} />
           <Route path="partners/new" element={<PartnerFormPage />} />

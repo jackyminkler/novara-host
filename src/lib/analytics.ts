@@ -13,6 +13,12 @@ export type AnalyticsEvent =
   | 'hp_people_list_viewed'
   | 'hp_person_viewed'
   | 'hp_person_note_saved'
+  // M1 templates. Together these answer whether a host reuses a plan at all,
+  // which is the only evidence that save-as-template earned its place.
+  | 'hp_template_created'
+  | 'hp_template_edited'
+  | 'hp_template_deleted'
+  | 'hp_event_saved_as_template'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

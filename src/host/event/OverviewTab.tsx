@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Plus, X } from 'lucide-react'
-import { Card, Chip, Eyebrow, KV, QuietButton, Sub, cx } from '../../ui/primitives'
+import { Card, Chip, Eyebrow, KV, OutlineButton, QuietButton, Sub, cx } from '../../ui/primitives'
 import { Field, Input, InlineText, Select } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
 import { useEvent } from './EventContext'
+import { useHost } from '../AuthProvider'
+import { useMutation } from '../useApi'
 import { ownerLabel } from '../../data/profiles'
+import { track } from '../../lib/analytics'
 import type { EventDoc, EventLink, LinkStatus, Party } from '../../data/types'
 import { formatLong, formatShort, isOverdue } from '../../lib/dates'
 import { Button, GhostButton } from '../../ui/primitives'
@@ -24,6 +27,7 @@ export default function OverviewTab() {
   const { bundle, run, hostName } = useEvent()
   const { event, parties, orgs, tasks, crew } = bundle
   const [addingLink, setAddingLink] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
 
   const eventId = event.id
   const confirmed = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
@@ -248,6 +252,15 @@ export default function OverviewTab() {
             </>
           )}
         </Card>
+
+        <Card>
+          <Eyebrow className="mb-[5px]">Template</Eyebrow>
+          <p className="mb-3 text-[12.5px] text-sec">
+            Save this plan so the next one starts here. Role slots, tasks, and the run of show
+            carry over as offsets, and the partner names stay behind.
+          </p>
+          <OutlineButton onClick={() => setSavingTemplate(true)}>Save as template</OutlineButton>
+        </Card>
       </div>
 
       {addingLink && (
@@ -259,7 +272,72 @@ export default function OverviewTab() {
           }}
         />
       )}
+
+      {savingTemplate && (
+        <SaveAsTemplateDialog
+          eventId={eventId}
+          eventTitle={event.title}
+          onClose={() => setSavingTemplate(false)}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * The other direction from event creation: an event that went well becomes the
+ * skeleton for the next one. Derivation lives in the seam, so this only names
+ * it and hands the host their new template to edit.
+ */
+function SaveAsTemplateDialog({
+  eventId,
+  eventTitle,
+  onClose,
+}: {
+  eventId: string
+  eventTitle: string
+  onClose: () => void
+}) {
+  const navigate = useNavigate()
+  const host = useHost()
+  const [name, setName] = useState(eventTitle)
+  const { mutate, busy, error } = useMutation()
+
+  const save = () =>
+    void mutate(async (api) => {
+      const id = await api.saveEventAsTemplate(eventId, name.trim(), host.uid)
+      track('hp_event_saved_as_template', { eventId })
+      track('hp_template_created', { createdFrom: 'event' })
+      navigate(`/app/templates/${id}`)
+    })
+
+  return (
+    <Modal title="Save as template" onClose={onClose} width="max-w-[420px]">
+      <Field
+        label="Template name"
+        htmlFor="tpl-from-event"
+        hint="Everything stays editable in the template afterwards."
+      >
+        <Input
+          id="tpl-from-event"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="What to call this plan"
+          autoFocus
+        />
+      </Field>
+      {error && (
+        <p className="mb-2 text-[12px] text-rosek">Saving didn't work ({error}).</p>
+      )}
+      <div className="flex items-center gap-3">
+        <Button onClick={save} disabled={busy || !name.trim()}>
+          {busy ? 'Saving' : 'Save template'}
+        </Button>
+        <GhostButton onClick={onClose} disabled={busy}>
+          Cancel
+        </GhostButton>
+      </div>
+    </Modal>
   )
 }
 
