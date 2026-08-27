@@ -106,17 +106,46 @@ Acceptance: two friends cannot book the same time.
 
 ---
 
-## 3. Build order and what blocks what
+## 3. State of play, 2026-08-26
 
-1. Derivation core, pure. **Done**, 15 tests passing.
-2. ICS parsing, pure. No dependencies.
-3. Data model, api seam, mock implementation. Unblocks all UI work with no backend.
-4. Host availability page: import, view, tune.
-5. Friend links and the guest booking page.
-6. Firebase implementation and the guest function's `booking` scope.
+Everything below is committed and pushed on `claude/personal-availability-calendar-fa0d89`
+(PR #1). Read `docs/build-log.md` for why each decision went the way it did; this section is only
+what exists and what does not.
 
-Steps 1 to 5 need nothing from Jacky. Step 6 needs a rules match block applied through the
-consumer repo, per the standing handoff in `docs/pending-rules.md`.
+**Built and verified:**
+
+1. Derivation core, pure, in `src/lib/availability/`. No firebase, react, network, or clock reads.
+2. ICS parsing, and Google event normalisation.
+3. Data model, api seam, mock and firebase implementations.
+4. Host availability page: open hours, calendar connect, publish, friend links, huddles.
+5. Guest booking page and guest huddle page, both mobile-first.
+6. Google Calendar read and write via Google Identity Services, on a dedicated OAuth client
+   inside `novarasocial-dev`. Guests use the non-sensitive `calendar.freebusy` scope.
+7. Multi-party `coverage`/`suggest`, time zones, link expiry.
+8. Guest function support for the `booking` and `huddle` scopes, on the existing two endpoints.
+
+73 unit tests, both build roots typecheck clean, `npm run build` passes.
+
+**Not done, in the order worth doing them:**
+
+- **Nothing calls `src/host/googleWrite.ts`.** It is built and tested, and refuses to touch any
+  event lacking its own tag, but no caller exists. The three triggers are confirming a date,
+  editing event details after confirmation, and a friend booking. This is the piece Jacky asked
+  for when she said "update on my calendar when I'm setting up an event".
+- **Settling a huddle does not create an event.** `settledStartsAt` exists on the huddle and the
+  guest page renders the settled state, but no host control sets it and nothing turns it into an
+  event. It should feed the existing event-creation flow rather than a second path.
+- **Partner calendar answers are per-date only.** A partner connecting their calendar answers the
+  proposed dates yes or no. Their free windows are not retained, so `suggest` cannot yet rank
+  dates across host plus partners. The pieces exist; nothing joins them.
+- **Zone labels are on the booking page only.** The huddle shows the viewer's zone; the host
+  pages assume one zone throughout.
+
+**Blocked on Jacky, and it blocks real testing:** four rules blocks in `docs/pending-rules.md`
+(`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`). Verified against the
+deployed ruleset on 2026-08-26: not applied, not deployed. Until they are, `VITE_DATA_MODE=mock`
+is the only way to run this. The blocks are inert while the collections are empty, so applying
+them early costs nothing and applying them late is what holds up testing.
 
 ---
 
