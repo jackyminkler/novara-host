@@ -2,6 +2,10 @@
 
 Novara host platform: a coordination workspace for community event hosts. The host has an account; co-hosts, sponsors, vendors, and crew participate through optional tokenized guest links with no account. Web only.
 
+Cross-repo engineering conventions — commits, ADRs, invariants, releases — are in
+**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`). Repo gates and the
+rules-ownership boundary are in `CONTRIBUTING.md`.
+
 Build contract: @docs/Novara_Host_Platform_PRD_v1.md
 Design source of truth: `docs/novara-hosts-wireframes-v2.html` (open in a browser; every screen maps to a feature number)
 Strategy context (read on demand, do not import): docs/Novara_Host_Platform_Plan_v1.md
