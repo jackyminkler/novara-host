@@ -108,7 +108,7 @@ something and cannot say which row it is, see §11.
 | **In flight** | `docs/plans/`, `*_INBOX.md`, `DEFERRED.md` | Transient | What is mid-build or owed | Whoever is building |
 | **Reference** | `docs/*_RULES.md`, `docs/audits/` | Dated snapshots | A narrow rule set or a point-in-time finding | Whoever investigated |
 
-### The two rules that keep the tiers from collapsing into each other
+### The rules that keep the tiers from collapsing into each other
 
 **A generated file is never hand-edited.** `CHANGELOG.md` and `MATCHING.md` are outputs.
 An edit to either is silently destroyed on the next regeneration, and in the meantime it
@@ -121,6 +121,18 @@ authoritative. That is exactly how
 `Unified_Matching_Algorithm_Handoff_2026-08-22.md` came to say the engine merge was
 pending after it had shipped. Decisions go in ADRs, which are records of a moment and
 therefore cannot drift.
+
+**A reason that collapses under inspection is worse than no reason.** A stated rationale is
+load-bearing: it is the thing stopping the next reader from "correcting" what it protects. If
+it is wrong but plausible, a reader who disproves it does not stop at disproving it — having
+shown the reason false, undoing the thing it guarded now looks like a correction rather than a
+regression, so a bad reason actively licenses the change it was written to prevent. On
+2026-08-26 a pending Firestore block justified keying a collection by document id on the
+grounds that it made the collection "unlistable, no index". The documents carry an `ownerUid`,
+so the ordinary `hpOwns()` shape would in fact work, and a reader could establish that in
+seconds. The real reason is that an id check does not depend on a field having been written
+correctly: `hpOwns()` trusts a field, an id check trusts the address. Write the reason that
+survives being tested, or write none and say it is unexplained.
 
 ---
 
@@ -329,6 +341,28 @@ It records *what* changed. An ADR records *why*. Neither substitutes for the oth
   with `git log origin/main..main`, a command that compares `main` to `main` and says
   nothing at all about a commit on a different branch. Worktrees are the fix; this check
   is the cheap backstop when you are not in one.
+- **Unmerged is not the same as abandoned, and git cannot tell you which.** An unmerged
+  branch is either work someone is still doing or work that was finished and forgotten.
+  They need opposite responses — leave the first alone, chase the second — and they look
+  identical in git: three commits ahead of `main` either way. Commit timestamps do not
+  break the tie in either direction; a branch quiet for a day may be waiting on review,
+  and one committed to two minutes ago may be finished and pushed. The signal lives
+  outside git: `ListAgents` lists the live sessions, and a session named for the branch
+  is its owner. **Ask it with `SendMessage` before you describe its work as stranded,
+  stale, or safe to take over**, and report what it tells you, attributed, rather than
+  your inference. On 2026-08-26 a session reported four pending Firestore rule blocks as
+  stranded off `main`, citing the repo's own twice-recorded stranding pattern; the branch
+  holding them had a session six hours into actively building the feature they belong to.
+  The evidence was real and the conclusion was wrong, because "unmerged" is consistent
+  with both stories and discriminates between neither.
+- **Confirm your own session name with `ListAgents` before signing with it.** The bullet
+  above makes session names the ownership signal, which only works if they are accurate.
+  A session that signs with a name belonging to a *different* live session corrupts exactly
+  the signal the check depends on, and does it in the most convincing way available: a
+  confident, well-argued message under the wrong attribution. This happened on 2026-08-26,
+  in the same exchange that produced the rule above and while agreeing with it. `ListAgents`
+  names the calling session in its first line; read it rather than inferring your name from
+  how someone else addressed you.
 - **Commit often** on the branch. **Never push, PR, or merge until Jacky says to.**
 - **When ready:** `/ship` (or `/ship --fast` for hotfixes).
 - **`main` is everything.** All work lands here. It is not "what's live" — it is what
