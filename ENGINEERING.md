@@ -11,6 +11,9 @@ five minutes.
 > The mirror carries the whole **kit**, not just this file: the ADR template, the feature
 > template, and the handbook generator each repo's CI runs. Mirroring only the standard
 > would leave every other repo unable to actually follow it.
+> A mirror can be **parked** — deliberately behind canonical, because its repo is
+> mid-something. Parked mirrors are listed by the drift check but do not count as drift,
+> and each carries a date that nags after 30 days. See §12.
 > **To change it:** edit the canonical copy, run the mirror script, commit all repos.
 > Never edit a mirror.
 > **Readable versions**, for readers without a checkout — Claude chat, Cowork, humans.
@@ -557,6 +560,48 @@ Process only survives if something runs it. These are the moving parts.
 `weekly-repo-sweep` exists because `/cross-repo-check` was manual-only, and a drift check
 nobody remembers to run is a drift check that does not exist. It lands an hour before the
 Friday retro on purpose: what it finds becomes retro input rather than a separate errand.
+
+### Parked mirrors
+
+A repo can be mid-something in a way that makes syncing its mirror the wrong move — a
+branch parked pending a decision, a gate not yet passing. Its mirror then sits
+deliberately behind canonical.
+
+**That is not drift, and reporting it as drift is actively harmful.** A check that flags a
+known, intentional state as a fault teaches its reader to skim past that line, and then it
+stops catching the real thing. So `mirror_engineering.sh` carries a `PARKED` list: those
+repos are listed separately, every run, and do not count toward the drift exit code.
+
+Each entry carries **a reason and a date**, and the check nags once the date is 30 days
+old. An exception with no expiry is precisely how a workaround gets promoted to
+how-things-are — the same failure §9 describes for undated rules. Un-park by deleting the
+line and running a normal sync.
+
+> Currently parked: `novara-pulse`, since 2026-08-26, pending the SwiftLint gate cleanup.
+
+### Never commit a mirror from a feature branch
+
+Sync mirrors **after** the canonical change lands on `main`, as its own commit. Not on the
+branch that changes the canonical file.
+
+A mirror is a byte-for-byte copy, so two branches that both touch `ENGINEERING.md` and both
+commit their mirrors produce a conflict git cannot resolve meaningfully: the two copies
+differ everywhere the two canonical edits differ, and "take ours" or "take theirs" silently
+discards one session's work. The canonical file itself merges fine — the edits are usually
+in different sections — which makes this worse, not better: the merge looks successful and
+the mirrors quietly disagree with it.
+
+Two sessions hit this on 2026-08-26, editing different sections of `ENGINEERING.md` in
+parallel. Both edits were good and would have merged cleanly. The mirrors would not have.
+
+So the protocol is:
+
+1. Branch, change the canonical file, PR, merge.
+2. On `main`, run `scripts/eng/mirror_engineering.sh`.
+3. Commit the mirrors, one sync per landing.
+
+Whoever lands second re-syncs. There is then exactly one authoritative sync per change, and
+never two competing copies of one file in flight.
 
 ### Novara-Brain's relationship to the code repos
 
