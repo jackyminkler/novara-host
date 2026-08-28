@@ -63,18 +63,31 @@ all in one file.
    not leave it as a floating diff.
 
 
-## A warning about this checkout, 2026-08-28
+## Checkout state, 2026-08-28 (resolved)
 
-**Local `main` is 7 commits behind `origin/main` and 1 ahead.** The one local commit is the
-2026-08-26 `docs(eng): sync ENGINEERING.md mirror`.
+This checkout **was** 7 commits behind `origin/main`, and the canon branch cut from it showed
+roughly 6,255 deletions across `src/lib/availability/`, `src/guest/BookingPage.tsx`,
+`src/guest/HuddlePage.tsx` and `src/host/pages/AvailabilityPage.tsx`. A squash merge or force push
+from that base would have reverted the personal availability and multi-party scheduling work in
+`f876b8a` and `0d74189`.
 
-The consequence is not cosmetic. A branch cut from this base shows roughly 6,255 deletions against
-`origin/main`, across `src/lib/availability/`, `BookingPage.tsx`, `HuddlePage.tsx`,
-`AvailabilityPage.tsx` and their neighbours. Those are a base artifact rather than deletions anyone
-made, but **a squash merge or a force push from such a branch would revert the personal availability
-and multi-party scheduling work** landed in `f876b8a` and `0d74189`.
+**Rebased onto `origin/main` on 2026-08-28.** `git diff --stat origin/main..HEAD` now shows only
+`CLAUDE.md`, `ENGINEERING.md` and `docs/PRODUCT_CANON.md`. No `src/` path appears. Both commits are
+ancestors of HEAD. A safety tag `backup/pre-rebase-2026-08-28` points at the pre-rebase HEAD and can
+be deleted once you are satisfied.
 
-**Rebase onto `origin/main` before pushing anything cut from here.**
+**One caveat.** The machine that ran the rebase had no GitHub credentials, so `git fetch origin`
+could not run and the rebase used the locally tracked `origin/main` (`d819b80`). Re-fetch before
+pushing in case origin has moved past that.
 
-The same staleness is why the four unruled `hp_` collections above stayed invisible: an audit run
-from this checkout sees a four-collection-old picture of the `hp_` surface.
+`1d62718`, the ENGINEERING.md mirror sync, was preserved rather than dropped: `origin/main` carries
+its own mirror-sync commits but is missing this one's actual content. It now sits on this branch as
+`cefcea8`. `ENGINEERING.md` section 12 says mirrors are synced on `main`, never from a feature
+branch, so this is a protocol exception inherited from the old base rather than one introduced here.
+If you would rather it sat on `main`, `git branch -f main cefcea8` and drop it from the branch.
+
+`MATCHING.md` is still a floating uncommitted modification in this working tree, unchanged by the
+rebase (md5 `9bd2d85d` before and after). See the note above.
+
+The four unruled `hp_` collections stayed invisible for exactly the reason this section used to
+describe: an audit run from a stale checkout sees an old picture of the `hp_` surface.
