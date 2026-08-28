@@ -27,4 +27,4 @@ Append to whichever checkout you are working in.
 
 ---
 
-(nothing pending)
+**Pending: none.** Last swept 2026-08-28 into `MATCHING.md` 1.6.2.
