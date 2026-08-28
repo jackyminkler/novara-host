@@ -11,6 +11,29 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
+> **Status 2026-08-28: written into the consumer ruleset, NOT yet deployed.**
+> All four blocks below (`hp_availabilitySettings`, `hp_friendLinks`,
+> `hp_bookings`, `hp_huddles`) are now present in
+> `firebase/firestore.rules` in the consumer repo, added by commit `300f3dd`,
+> "fix(security): rule the four hp_ collections that had no rules block".
+>
+> They stay under Pending, not Applied, on purpose. Applied in this file means
+> deployed and read back from the Firebase Rules API, which is the check both
+> recorded incidents skipped. Neither has happened yet, so nothing in the app
+> can reach these collections in `firebase` data mode.
+>
+> Two things are still outstanding, and they are the same two the entries below
+> warn about:
+>
+> 1. **Deploy has not run.** Deploy rules from the consumer repo, then read the
+>    deployed ruleset back from the Rules API rather than trusting a checkout.
+> 2. **The commit is off `main`.** `300f3dd` sits on the branch
+>    `docs/prd-v2-canon-2026-08-28` and no other branch contains it. Merge it
+>    into `main` the same day it deploys. A deploy from `main` before that merge
+>    would not carry these blocks at all.
+>
+> Move this section to Applied with the date once both are done.
+
 ### How to apply these four blocks
 
 Enough that this file can be handed over on its own.
