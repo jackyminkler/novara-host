@@ -61,3 +61,20 @@ all in one file.
 2. **`MATCHING.md` here is a regenerated v1.6.1 sitting as an uncommitted working tree change**,
    while `HEAD` is v1.5.0. A `git checkout` silently reverts it. Commit it or re-render it, but do
    not leave it as a floating diff.
+
+
+## A warning about this checkout, 2026-08-28
+
+**Local `main` is 7 commits behind `origin/main` and 1 ahead.** The one local commit is the
+2026-08-26 `docs(eng): sync ENGINEERING.md mirror`.
+
+The consequence is not cosmetic. A branch cut from this base shows roughly 6,255 deletions against
+`origin/main`, across `src/lib/availability/`, `BookingPage.tsx`, `HuddlePage.tsx`,
+`AvailabilityPage.tsx` and their neighbours. Those are a base artifact rather than deletions anyone
+made, but **a squash merge or a force push from such a branch would revert the personal availability
+and multi-party scheduling work** landed in `f876b8a` and `0d74189`.
+
+**Rebase onto `origin/main` before pushing anything cut from here.**
+
+The same staleness is why the four unruled `hp_` collections above stayed invisible: an audit run
+from this checkout sees a four-collection-old picture of the `hp_` surface.
