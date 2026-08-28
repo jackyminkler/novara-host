@@ -3,7 +3,15 @@
 Novara host platform: a coordination workspace for community event hosts. The host has an account; co-hosts, sponsors, vendors, and crew participate through optional tokenized guest links with no account. Web only.
 
 Cross-repo engineering conventions — commits, ADRs, invariants, releases — are in
-**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`). Repo gates and the
+**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`).
+
+**Product canon and the normative design rules are in `novara-brain`, indexed by
+`docs/PRODUCT_CANON.md`. Read that before building any feature or any UI here.**
+`Novara_Design_Rules_v1.md` names Novara Hosts, guest token pages and share cards explicitly in
+its scope, so it governs this repo too, not only the Flutter app. The rules broken most often: no
+em dashes anywhere, sentence case throughout, nothing above font weight 500, twelve colour tokens
+with no opacity variants, every number carries its unit, every screen defines five states, and no
+score on a person anywhere. Repo gates and the
 rules-ownership boundary are in `CONTRIBUTING.md`.
 
 Build contract: @docs/Novara_Host_Platform_PRD_v1.md
