@@ -3,6 +3,20 @@
 **Last updated:** 2026-08-28
 **Tier:** Reference, a pointer file. It holds no content of its own on purpose.
 
+## Start here
+
+Canon lives in `novara-brain`, which is the non-code repo. Nothing in this file is content; it is a pointer, and a stale pointer is worse than none.
+
+| Read | Path in `novara-brain` | What it is |
+|---|---|---|
+| **1** | `CONTEXT.md` | **Canonical compile-truth.** What is true now: positioning, model, payer, traction, canonical numbers, language rules |
+| **2** | `01-memory/decisions.md` | Active strategic decisions. Read every session |
+| **3** | `03-product/strategy/Novara_Pivot_Consolidation_SSOT_2026-08-28.md` | The pivot, the research behind it, and the conflicts still open |
+| as needed | `CANON_INBOX.md` | Decisions captured but not yet folded into `CONTEXT.md` |
+
+**If you make or learn a decision that changes what is true about Novara**, update `CONTEXT.md` or append to `CANON_INBOX.md` before the session ends. See the canon sync rule in `novara-brain/CLAUDE.md`. `novara-brain/scripts/canon_check.py` enforces it and a weekday scheduled task reports drift.
+
+
 The product model, the feature set and the **normative design rules** live in `novara-brain`, the
 non-code repo. This file exists so a session opening `novara-host` can find them.
 
