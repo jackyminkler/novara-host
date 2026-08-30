@@ -77,6 +77,12 @@ export function InlineText({
   placeholder,
   multiline,
   className,
+  // Type scale is a prop rather than something to layer on through className.
+  // Two arbitrary text sizes on one element are resolved by their order in the
+  // generated stylesheet, not by their order in the class string, so an
+  // override passed through className wins or loses unpredictably. One
+  // utility, chosen here, has no such race.
+  textClass = 'text-[12.5px]',
   ariaLabel,
 }: {
   value: string
@@ -84,6 +90,7 @@ export function InlineText({
   placeholder?: string
   multiline?: boolean
   className?: string
+  textClass?: string
   ariaLabel: string
 }) {
   const shared = {
@@ -95,7 +102,8 @@ export function InlineText({
       if (next !== value) onCommit(next)
     },
     className: cx(
-      'w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[12.5px] text-ink outline-none transition hover:border-line focus:ring-focus focus:bg-surface',
+      'w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-ink outline-none transition hover:border-line focus:ring-focus focus:bg-surface',
+      textClass,
       className,
     ),
   }
