@@ -11,61 +11,58 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-> **Status 2026-08-28: written into the consumer ruleset, NOT yet deployed.**
-> All four blocks below (`hp_availabilitySettings`, `hp_friendLinks`,
-> `hp_bookings`, `hp_huddles`) are now present in
-> `firebase/firestore.rules` in the consumer repo, added by commit `300f3dd`,
-> "fix(security): rule the four hp_ collections that had no rules block".
->
-> They stay under Pending, not Applied, on purpose. Applied in this file means
-> deployed and read back from the Firebase Rules API, which is the check both
-> recorded incidents skipped. Neither has happened yet, so nothing in the app
-> can reach these collections in `firebase` data mode.
->
-> Two things are still outstanding, and they are the same two the entries below
-> warn about:
->
-> 1. **Deploy has not run.** Deploy rules from the consumer repo, then read the
->    deployed ruleset back from the Rules API rather than trusting a checkout.
-> 2. **The commit is off `main`.** `300f3dd` sits on the branch
->    `docs/prd-v2-canon-2026-08-28` and no other branch contains it. Merge it
->    into `main` the same day it deploys. A deploy from `main` before that merge
->    would not carry these blocks at all.
->
-> Move this section to Applied with the date once both are done.
+> **Status 2026-08-31: nothing pending.** The four personal-availability blocks
+> (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`) are
+> deployed and read back from the Firebase Rules API; see the first entry under
+> Applied.
 
-### How to apply these four blocks
+## Applied
 
-Enough that this file can be handed over on its own.
+### Personal availability: `hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`
 
-**Where they go.** In the consumer repo, `firebase/firestore.rules`, immediately after the
-`hp_feedback` block and before the closing braces, at the same nesting as every other `hp_` block.
-They call `hpOwns()` and `hpOwnsNew()`, which are defined just above them in that same scope, so
-pasting them anywhere else silently breaks the reference.
+**Deployed 2026-08-29, read back and verified 2026-08-31.** All four blocks are live in the
+shared ruleset, so the gate on taking personal availability and huddles off mock data is open.
 
-**`hp_availabilitySettings` is not `hp_availability`.** That file already has an `hp_availability`
-block, which is the day-level away and open bands from F10. The new one is a different collection
-with an unhelpfully similar name, and it is the most likely thing for someone to "correct" into a
-duplicate or skip as already covered. Both need to exist.
+Read-back evidence, first-hand from the Firebase Rules API for `novarasocial-dev` on 2026-08-31:
 
-**Nothing else in the file changes.** No helper edits, no changes to existing blocks, no index
-file changes, no Storage changes.
+- The `cloud.firestore` release points at ruleset `1b8a44f6-c160-44e0-a40f-5824c2687017`
+  (release updateTime `2026-08-29T22:36:31.322525Z`, ruleset createTime
+  `2026-08-29T22:36:31.060527Z`).
+- The downloaded ruleset source is byte-identical to the consumer repo's `main` at `fd6c693`:
+  37,014 bytes on both sides, the same sha256 on both sides
+  (`fe9c9c715afe3f35692df75062e70f31056967710fc82adbbc580f872192c3f5`), an empty `diff`.
+- All four match blocks were grepped out of the API response itself, not out of a checkout, and
+  each matches the block text below verbatim after the uniform four-space nesting indent every
+  `hp_` block gets. Placement landed as prescribed: after `hp_feedback`, in the same scope as
+  `hpOwns()` and `hpOwnsNew()`. `hp_availability` (the day-level bands from F10) still exists
+  separately, so the two similarly named collections did not get folded into one.
 
-**Verified 2026-08-26: `main` is safe to deploy from.** The stranding recorded under Applied below
-is resolved. The consumer repo's `main` now carries the open-signup form of `hpIsHost()` (read the
-function body, not a grep, per the trap recorded below), plus the `hp_feedback` and `hp_people`
-blocks. So unlike on 2026-08-25, deploying rules from `main` no longer reverts open signup.
+Neither recorded failure mode recurred, though the second came close in a new form:
 
-**Then do the two things that went wrong twice before.** Read the deployed ruleset back from the
-Firebase Rules API to confirm the blocks are live, rather than trusting the checkout. And merge
-whatever branch you deployed from into `main` the same day: both previous incidents were a deploy
-treated as final while the merge was treated as tidying.
+- **Nothing is stranded.** `300f3dd` (the four blocks) and `43663ec` are both ancestors of
+  consumer `origin/main`, so deployed, `main`, and this file agree.
+- **The deploy outran its record here by two days.** The consumer-repo session that added the
+  consumer-side `admin_mirror` block deployed both changes together on 2026-08-29 with
+  `--only firestore:rules` (commit `43663ec`, "rule admin_mirror, and deploy it with the four
+  hp_ blocks", committed six minutes after the release updated). It merged to `main` and wrote
+  an ops-log row the same day calling SEC1 closed, so this time the miss was narrower than the
+  two incidents below: the row claimed closure on the deploy's exit alone, with no Rules API
+  read-back, and this file never moved, so these entries sat under Pending for two days while
+  the blocks were already live, and the consumer backlog yaml still said unprotected on
+  2026-08-31. Applied still means read back and verified; that happened 2026-08-31, and it is
+  what moved this entry.
 
-### Personal availability: `hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`
+The ownership suite (`tests/ownership.rules.test.ts`) is green at 99 of 99 cases on 2026-08-31.
+That is a regression check on the previously applied blocks only: `emulator/firestore.rules` and
+the suite do not yet mention these four collections, so for now they are verified by read-back
+and verbatim match, not rehearsed on the emulator. A task chip to extend the suite was filed
+with Jacky on 2026-08-31.
 
-Written 2026-08-26 for F14 to F19. Three new top-level collections. Nothing in the app can reach
-them in `firebase` data mode until these blocks are applied, so this is the gate on taking the
-feature off mock.
+The original entries follow, as written.
+
+**Written 2026-08-26 for F14 to F19.** Three new top-level collections. Nothing in the app can
+reach them in `firebase` data mode until these blocks are applied, so this is the gate on taking
+the feature off mock.
 
 `hp_availabilitySettings` is keyed by uid, one document per host, so the owner check is on the
 document id rather than a field. **Apply it verbatim rather than folding it into the `hpOwns()`
@@ -111,9 +108,8 @@ now carry `eventId: null` for the `booking` and `huddle` scopes, where every oth
 an event id, plus a nullable `expiresAt`. Nothing in the current ruleset reads either field, so no
 block changes. Worth knowing because these are the first guest tokens not scoped to an event.
 
-### Personal availability, part two: `hp_huddles`
-
-Written 2026-08-26. One more top-level collection, same shape of block as the three above.
+**Part two, `hp_huddles`.** Written 2026-08-26. One more top-level collection, same shape of
+block as the three above.
 
 ```
 match /hp_huddles/{huddleId} {
@@ -133,8 +129,6 @@ reach her own huddles.
 
 **Still no composite index.** `hp_huddles` is only ever read by `ownerUid` for the host list and
 by document id for the guest function.
-
-## Applied
 
 ### Open signup and `hp_feedback`
 
