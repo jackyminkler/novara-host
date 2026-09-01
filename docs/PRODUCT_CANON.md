@@ -67,14 +67,19 @@ all in one file.
 
 ## Two things owed to `novara` from here
 
-1. **Four collections have no rules block.** `hp_availabilitySettings`, `hp_bookings`,
-   `hp_friendLinks` and `hp_huddles` exist on `origin/main`. `novara/firebase/firestore.rules`
-   carries ten `hp_` blocks and none of these four. The handover text is already written in
-   `docs/pending-rules.md`. It goes to Jacky, who applies it verbatim in `novara`. This repo cannot
-   deploy rules by design, per ADR-0001 in `novara`.
-2. **`MATCHING.md` here is a regenerated v1.6.1 sitting as an uncommitted working tree change**,
-   while `HEAD` is v1.5.0. A `git checkout` silently reverts it. Commit it or re-render it, but do
-   not leave it as a floating diff.
+1. **Four collections are written into the consumer ruleset and not yet deployed.**
+   `hp_availabilitySettings`, `hp_bookings`, `hp_friendLinks` and `hp_huddles`. Updated
+   2026-09-01: the earlier wording here said they had no block at all, which was true on 2026-08-26
+   and stopped being true on 2026-08-28. Per `docs/pending-rules.md`, they now exist in
+   `novara/firebase/firestore.rules` but stay under **Pending** rather than Applied, because
+   Applied in that file means deployed *and read back from the Firebase Rules API*. Until that
+   read-back happens these four collections are unprotected in production and the availability
+   features cannot run in `firebase` data mode. This repo cannot deploy rules by design, per
+   ADR-0001 in `novara`.
+2. ~~`MATCHING.md` here is a regenerated v1.6.1 sitting as an uncommitted working tree change.~~
+   **Resolved 2026-08-28 in `f492a67`.** The working tree and `HEAD` both carry v1.6.2 at md5
+   `142f77f6`. Verified 2026-09-01 by comparing `md5sum MATCHING.md` against
+   `git show HEAD:MATCHING.md`. There is no floating diff.
 
 
 ## Checkout state, 2026-08-28 (resolved)
@@ -100,8 +105,9 @@ its own mirror-sync commits but is missing this one's actual content. It now sit
 branch, so this is a protocol exception inherited from the old base rather than one introduced here.
 If you would rather it sat on `main`, `git branch -f main cefcea8` and drop it from the branch.
 
-`MATCHING.md` is still a floating uncommitted modification in this working tree, unchanged by the
-rebase (md5 `9bd2d85d` before and after). See the note above.
+~~`MATCHING.md` is still a floating uncommitted modification in this working tree.~~ Resolved in
+`f492a67`; see the note above. This paragraph is kept rather than deleted because the checkout-state
+section is a dated record.
 
 The four unruled `hp_` collections stayed invisible for exactly the reason this section used to
 describe: an audit run from a stale checkout sees an old picture of the `hp_` surface.
