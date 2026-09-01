@@ -197,6 +197,25 @@ old one, and nothing from a run appears on a guest page or a partner link.
 
 ---
 
+## Plans (group scheduling on huddles)
+
+### What it does
+
+A plan finds a time for a group. The organizer, any signed-in host, creates one: what it
+is, how long it needs, which days and hours are worth considering, when answers close
+(respond by), and when the thing must have happened (happen by). They get one link for the
+whole group. Everyone on the link joins with a name, drops in their calendar (a single
+non-sensitive freebusy read) or picks days by hand, optionally leaves an email, and votes
+on the ranked times. The organizer picks one, adds a location and notes, and creates a
+Google Calendar invite that reaches everyone who left an email; everyone else gets add to
+calendar buttons on the plan page. Coming back after the deadlines shows the pick, or that
+no time was picked.
+
+The user-facing word is always "plan". The code word is `Huddle`, kept from the first
+build; the collection is `hp_huddles`.
+
+---
+
 ## Recap and ROI
 
 **Built, unreleased**
