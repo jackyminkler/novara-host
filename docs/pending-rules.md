@@ -66,6 +66,14 @@ the suite do not yet mention these four collections, so for now they are verifie
 and verbatim match, not rehearsed on the emulator. A task chip to extend the suite was filed
 with Jacky on 2026-08-31.
 
+Superseded within hours, same day: `8c3528d` mirrors the four blocks into
+`emulator/firestore.rules` and rehearses them in the ownership suite with negative controls,
+`533bd90` replaces the human hand-off with the PR-plus-two-machines gate now described at the
+top of this file, and `novara/tools/rules_check.py` (consumer CI, `rules-drift.yml`) re-checks
+live ruleset against consumer `main` against this file's Applied blocks on weekdays. The task
+chip above was withdrawn as superseded by the git-index-lock-recovery session, so the previous
+paragraph describes the state for part of 2026-08-31 only.
+
 The original entries follow, as written.
 
 **Written 2026-08-26 for F14 to F19.** Three new top-level collections. Nothing in the app can
