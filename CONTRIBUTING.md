@@ -22,8 +22,8 @@ npm run emulators        # separate terminal
 npm run test:rules
 ```
 
-> **This gate is not yet wired into CI.** Until it is, it runs on your machine or it does
-> not run. See `ENGINEERING.md` §10.
+> Wired into CI 2026-08-31: `.github/workflows/ci.yml` runs typecheck, build, and the
+> ownership suite against the emulator (`rules-suite` job) on every PR and push to `main`.
 
 Definition of done for a feature is in `CLAUDE.md` — acceptance criteria, wireframe match,
 copy rules, 390 px verification, Amplitude events, and the two commands above.
@@ -38,11 +38,15 @@ has no `firestore` section. See
 for why: one ruleset file with two deployers is not a union, it is last-writer-wins, and
 the failure mode is every consumer read returning permission-denied in production.
 
-When a new or changed `hp_` collection needs rules, a composite index, or a Storage path:
+When a new or changed `hp_` collection needs rules, a composite index, or a Storage path
+(full flow with the reasons: the Workflow section of `docs/pending-rules.md`):
 
 1. Write the exact match block or index definition to `docs/pending-rules.md`.
-2. Tell Jacky.
-3. **Stop.** She applies it through the consumer repo.
+2. Mirror it into `emulator/firestore.rules` and add behavioural cases to
+   `tests/ownership.rules.test.ts`, negative-control first.
+3. Open a PR — CI runs the ownership suite. Jacky reviews the PR; she does not run the
+   deploy. The block deploys from `novara` `main`, and moves to Applied only on Firebase
+   Rules API read-back (`novara/tools/rules_check.py` checks this on weekdays).
 
 Surface index needs **when the query is written**, not when it breaks — a query needing a
 composite index fails at runtime until the index is applied and built.

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { AtSign, Check, Link2, Mail, Phone, X } from 'lucide-react'
+import { AtSign, CalendarCheck, Check, Link2, Mail, Phone, X } from 'lucide-react'
 import { fetchGuestView, submitGuestAction, GuestError } from './guestClient'
-import type { GuestCard, GuestDeliverable, GuestView } from './guestTypes'
+import type { BookingView, GuestCard, GuestDeliverable, GuestView, HuddleView } from './guestTypes'
+import { isBookingView, isHuddleView } from './guestTypes'
+import BookingPage from './BookingPage'
+import HuddlePage from './HuddlePage'
 import { Card, Chip, Eyebrow, SubTitle, cx } from '../ui/primitives'
 import { Input, Textarea } from '../ui/form'
 import { formatClock, formatDue, formatLong, formatShort } from '../lib/dates'
 import { track } from '../lib/analytics'
+import { googleConfigured } from '../lib/googleIdentity'
 
 // One page, mobile first at 390 px. No account, no chrome, private to the
 // recipient, every action two taps plus confirmation. This is the product's
@@ -15,6 +19,10 @@ import { track } from '../lib/analytics'
 export default function GuestPage() {
   const { token = '' } = useParams()
   const [view, setView] = useState<GuestView | null>(null)
+  // A booking link is a different product on the same token mechanism, so it
+  // gets its own page rather than another branch inside this one.
+  const [booking, setBooking] = useState<BookingView | null>(null)
+  const [huddle, setHuddle] = useState<HuddleView | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'invalid' | 'error'>('loading')
 
   useEffect(() => {
@@ -22,12 +30,21 @@ export default function GuestPage() {
     fetchGuestView(token)
       .then((next) => {
         if (cancelled) return
-        setView(next)
+        if (isBookingView(next)) {
+          setBooking(next)
+        } else if (isHuddleView(next)) {
+          setHuddle(next)
+        } else {
+          setView(next)
+        }
         setState('ready')
         // A card opening is a different question from a partner opening their
         // slice of an event, so it is a different event name rather than a
-        // fourth value of the same one.
-        if (next.scope === 'card') track('hp_card_viewed')
+        // fourth value of the same one. Booking and huddle views narrow first
+        // because their shapes carry no subject.
+        if (isBookingView(next)) track('hp_guest_view_opened', { role: 'friend', scope: next.scope })
+        else if (isHuddleView(next)) track('hp_guest_view_opened', { role: 'huddle', scope: next.scope })
+        else if (next.scope === 'card') track('hp_card_viewed')
         else track('hp_guest_view_opened', { role: next.subject.roleLabel, scope: next.scope })
       })
       .catch((err: unknown) => {
@@ -59,6 +76,14 @@ export default function GuestPage() {
         </div>
       </Shell>
     )
+  }
+
+  if (booking) {
+    return <BookingPage token={token} initial={booking} Shell={Shell} />
+  }
+
+  if (huddle) {
+    return <HuddlePage token={token} initial={huddle} Shell={Shell} />
   }
 
   if (state === 'error' || !view) {
@@ -126,12 +151,16 @@ function PartyView({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [scheduleTab, setScheduleTab] = useState<'mine' | 'all'>('mine')
+  const [checking, setChecking] = useState(false)
+  const [checkNote, setCheckNote] = useState<string | null>(null)
 
   const submit = useCallback(
     async (action: Parameters<typeof submitGuestAction>[1], payload: Record<string, unknown>) => {
       setSaving(true)
       try {
-        onUpdate(await submitGuestAction(token, action, payload))
+        const next = await submitGuestAction(token, action, payload)
+        // Event-scoped pages only ever get event-scoped payloads back.
+        if (!isBookingView(next) && !isHuddleView(next)) onUpdate(next)
         setSaved(true)
         setTimeout(() => setSaved(false), 2500)
       } finally {
@@ -140,6 +169,49 @@ function PartyView({
     },
     [token, onUpdate],
   )
+
+  /**
+   * Read this partner's calendar once and answer the dates from it.
+   *
+   * Their calendar never leaves their browser, and the only thing posted back
+   * is yes or no per proposed date. This runs on calendar.freebusy, which
+   * returns busy blocks with no titles, so there is nothing here that could
+   * leak what they are actually doing.
+   */
+  const checkCalendarNow = async () => {
+    setChecking(true)
+    setCheckNote(null)
+    try {
+      const { checkCalendar, answerFor } = await import('./guestCalendar')
+      const stamps = view.dateOptions.map((o) => new Date(o.startsAt).getTime()).sort((a, b) => a - b)
+      const from = new Date(Math.min(stamps[0] ?? Date.now(), Date.now()))
+      const to = new Date((stamps[stamps.length - 1] ?? Date.now()) + 86400000)
+      const { free } = await checkCalendar(from, to)
+      // Two hours, because the guest view carries no event length. Generous
+      // enough that a genuinely open morning reads as free, tight enough that
+      // a morning with a meeting in it does not.
+      const answers = answerFor(free, view.dateOptions, 120)
+      setResponses((prev) => ({ ...prev, ...answers }))
+      const yes = Object.values(answers).filter((a) => a === 'yes').length
+      setCheckNote(
+        yes === 0
+          ? 'Your calendar is busy for all of these. Answer by hand if one still works.'
+          : `Filled in from your calendar: ${yes} of ${view.dateOptions.length} look free.`,
+      )
+      void submit('respond_dates', { responses: answers, constraintNote: note.trim(), source: 'calendar' })
+    } catch (err) {
+      const reason = (err as { reason?: string })?.reason
+      setCheckNote(
+        reason === 'popup_blocked'
+          ? 'Your browser blocked the Google window. Allow popups, then try again.'
+          : reason === 'not_configured'
+            ? 'Calendar checking is not switched on for this link.'
+            : 'Could not read your calendar. You can still answer by hand.',
+      )
+    } finally {
+      setChecking(false)
+    }
+  }
 
   const saveDates = () => {
     void submit('respond_dates', { responses, constraintNote: note.trim() })
@@ -206,6 +278,11 @@ function PartyView({
           <p className="mb-[5px] text-xs font-medium text-sec">
             Which mornings work? Tap all that apply.
           </p>
+          <CalendarCheckButton
+            busy={checking}
+            note={checkNote}
+            onCheck={() => void checkCalendarNow()}
+          />
           {view.dateOptions.map((option) => {
             const answer = responses[option.id]
             return (
@@ -669,6 +746,40 @@ function RecapRow({ label, children }: { label: string; children: React.ReactNod
     <div className="flex gap-2 py-[5px] text-[12.5px]">
       <span className="min-w-[110px] font-medium text-sec">{label}</span>
       <span>{children}</span>
+    </div>
+  )
+}
+
+/**
+ * The optional shortcut: read my calendar instead of tapping through dates.
+ *
+ * Optional at every layer, per solo-first. A partner who ignores this answers
+ * exactly as before, and nothing about the page depends on them connecting.
+ */
+function CalendarCheckButton({
+  busy,
+  note,
+  onCheck,
+}: {
+  busy: boolean
+  note: string | null
+  onCheck: () => void
+}) {
+  if (!googleConfigured) return null
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onCheck}
+        className="hairline inline-flex items-center gap-[6px] rounded-[9px] border border-line bg-surface px-[11px] py-[7px] text-[12.5px] font-medium text-ink transition hover:border-vio hover:text-vio disabled:opacity-50"
+      >
+        <CalendarCheck size={14} />
+        {busy ? 'Reading your calendar' : 'Check my calendar instead'}
+      </button>
+      <p className="mt-[5px] text-[11px] text-mut">
+        {note ?? 'One read, nothing stored. It sees when you are busy, never what you are doing.'}
+      </p>
     </div>
   )
 }

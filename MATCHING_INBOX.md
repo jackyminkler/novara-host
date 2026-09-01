@@ -88,3 +88,4 @@ Append to whichever checkout you are working in.
   `src/host/event/EventWorkspace.tsx`, `src/lib/analytics.ts`, `src/data/mock/seed.ts`,
   `src/data/mock/mockApi.ts`, `docs/features/matching.md` (new),
   `docs/features/templates.md`, `docs/features/README.md`, `docs/build-log.md`.
+**Pending: none.** Last swept 2026-08-28 into `MATCHING.md` 1.6.2.

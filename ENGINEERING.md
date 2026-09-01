@@ -108,7 +108,7 @@ something and cannot say which row it is, see §11.
 | **In flight** | `docs/plans/`, `*_INBOX.md`, `DEFERRED.md` | Transient | What is mid-build or owed | Whoever is building |
 | **Reference** | `docs/*_RULES.md`, `docs/audits/` | Dated snapshots | A narrow rule set or a point-in-time finding | Whoever investigated |
 
-### The two rules that keep the tiers from collapsing into each other
+### The rules that keep the tiers from collapsing into each other
 
 **A generated file is never hand-edited.** `CHANGELOG.md` and `MATCHING.md` are outputs.
 An edit to either is silently destroyed on the next regeneration, and in the meantime it
@@ -121,6 +121,18 @@ authoritative. That is exactly how
 `Unified_Matching_Algorithm_Handoff_2026-08-22.md` came to say the engine merge was
 pending after it had shipped. Decisions go in ADRs, which are records of a moment and
 therefore cannot drift.
+
+**A reason that collapses under inspection is worse than no reason.** A stated rationale is
+load-bearing: it is the thing stopping the next reader from "correcting" what it protects. If
+it is wrong but plausible, a reader who disproves it does not stop at disproving it — having
+shown the reason false, undoing the thing it guarded now looks like a correction rather than a
+regression, so a bad reason actively licenses the change it was written to prevent. On
+2026-08-26 a pending Firestore block justified keying a collection by document id on the
+grounds that it made the collection "unlistable, no index". The documents carry an `ownerUid`,
+so the ordinary `hpOwns()` shape would in fact work, and a reader could establish that in
+seconds. The real reason is that an id check does not depend on a field having been written
+correctly: `hpOwns()` trusts a field, an id check trusts the address. Write the reason that
+survives being tested, or write none and say it is unexplained.
 
 ---
 
@@ -329,13 +341,68 @@ It records *what* changed. An ADR records *why*. Neither substitutes for the oth
   with `git log origin/main..main`, a command that compares `main` to `main` and says
   nothing at all about a commit on a different branch. Worktrees are the fix; this check
   is the cheap backstop when you are not in one.
-- **Commit often** on the branch. **Never push, PR, or merge until Jacky says to.**
-- **When ready:** `/ship` (or `/ship --fast` for hotfixes).
+- **Unmerged is not the same as abandoned, and git cannot tell you which.** An unmerged
+  branch is either work someone is still doing or work that was finished and forgotten.
+  They need opposite responses — leave the first alone, chase the second — and they look
+  identical in git: three commits ahead of `main` either way. Commit timestamps do not
+  break the tie in either direction; a branch quiet for a day may be waiting on review,
+  and one committed to two minutes ago may be finished and pushed. The signal lives
+  outside git: `ListAgents` lists the live sessions, and a session named for the branch
+  is its owner. **Ask it with `SendMessage` before you describe its work as stranded,
+  stale, or safe to take over**, and report what it tells you, attributed, rather than
+  your inference. On 2026-08-26 a session reported four pending Firestore rule blocks as
+  stranded off `main`, citing the repo's own twice-recorded stranding pattern; the branch
+  holding them had a session six hours into actively building the feature they belong to.
+  The evidence was real and the conclusion was wrong, because "unmerged" is consistent
+  with both stories and discriminates between neither.
+- **Confirm your own session name with `ListAgents` before signing with it.** The bullet
+  above makes session names the ownership signal, which only works if they are accurate.
+  A session that signs with a name belonging to a *different* live session corrupts exactly
+  the signal the check depends on, and does it in the most convincing way available: a
+  confident, well-argued message under the wrong attribution. This happened on 2026-08-26,
+  in the same exchange that produced the rule above and while agreeing with it. `ListAgents`
+  names the calling session in its first line; read it rather than inferring your name from
+  how someone else addressed you.
+- **Commit often** on the branch, and push under the policy below (2026-08-31; this
+  supersedes "never push until Jacky says to" — waiting on a human for unpushable-safe
+  work was the bottleneck, and it is removed):
+  - **Docs, tests, tooling, and CI config: commit and push straight to `main`.** These
+    cannot break production, and holding them for review is how finished work sat
+    unpushed for days while every status surface downstream of it went stale.
+  - **Anything touching `firestore.rules`, Cloud Functions, or app runtime code:
+    branch, push, open a PR, and say so in your report. Do not merge it yourself.**
+    Jacky reviews the PR — review is her role in the loop; execution is not.
+  - **Never force-push. Never rewrite published history.** Amend only commits that have
+    never left the machine. Tag before anything destructive (`backup/<what>-<date>`).
+    Reversibility is the safety property here, not caution.
+- **When ready:** `/ship` (or `/ship --fast` for hotfixes) still runs the full gate for
+  runtime work.
 - **`main` is everything.** All work lands here. It is not "what's live" — it is what
   ships *next*. See §7.
 - **PR titles follow §5.** The PR body is where the reasoning goes, and it is the cheapest
   durable place to put it. If the reasoning is expensive-to-reverse, it belongs in an ADR
   and the PR body links to it.
+
+### Stale git lock files
+
+A crashed or permission-starved session leaves `.git/index.lock` (or `HEAD.lock`) behind,
+and every later git write fails with "File exists". This has cost days, twice — most
+recently a zero-byte lock dated 2026-08-29 sat in `novara-host` for three days and
+silently failed every commit.
+
+Recognising a stale lock — all three together, not any one:
+
+1. **Zero bytes** (`ls -la .git/index.lock`). A real index is written to the lock and
+   renamed in one step, so a lock that stays empty was abandoned mid-write.
+2. **No git process running** (`ps aux | grep '[g]it '`).
+3. **Timestamp older than your session.** A fresh lock may belong to a live git process
+   in another session or worktree.
+
+All three true: deleting it is safe — `rm .git/index.lock`. Any of them false: wait, or
+find the process. On a mount that cannot delete files, move it aside instead
+(`mkdir -p .git/stale-locks && mv .git/index.lock .git/stale-locks/index.lock.$(date +%s)`)
+and delete the moved copy later from a shell that can. Worktrees carry their own locks —
+check `.git/worktrees/*/index.lock` too.
 
 ---
 
@@ -369,7 +436,7 @@ part of routine verification.
 
 | Repo | The gate | CI |
 | --- | --- | --- |
-| `novara` | `dart analyze` clean + relevant `test/contracts/` + (Functions) `npm test` and `npm run lint` in `firebase/functions` | `.github/workflows/ci.yml` |
+| `novara` | `dart analyze` clean + relevant `test/contracts/` + (Functions) `npm test` and `npm run lint` in `firebase/functions`; rules changes also `python3 tools/rules_check.py` (live ruleset vs `main` vs the host Applied record) | `.github/workflows/ci.yml`; `rules-drift.yml` on main pushes + weekday cron |
 | `novara-matching` | `python3 -m pytest tests/ -q` + `python3 tools/drift_check.py` exits clean | `.github/workflows/ci.yml` (added 2026-08-26) |
 | `novara-host` | `npx tsc --noEmit` + `npm run build` | `.github/workflows/ci.yml` (added 2026-08-26) |
 | `novara-pulse` | Build + `ContractTests` | `.github/workflows/ci.yml` |
@@ -529,6 +596,49 @@ the published handbook; it does not keep a copy.
 **Yes** if a user can see it, or if more than one surface reads the same data to produce
 it. **No** for a component with one caller, a styling change, or anything wholly inside one
 widget — `docs/ARCHITECTURE.md` covers those.
+
+---
+
+### Visual documentation
+
+Added 2026-08-28. A UI change with no visual record, and an architecture change with no
+diagram, are both invisible in review and unverifiable six weeks later.
+
+**Neither belongs in the section 8 gate.** That gate is deliberately cheap and explicitly
+excludes simulators and manual walkthroughs, and that is the right call. Visual documentation
+belongs in the feature-doc tier, where it is read by a person deciding whether a change is
+safe.
+
+**UI changes: goldens first, screenshots only where goldens cannot reach.**
+
+- Where a golden test covers the surface, **the golden is the visual record.**
+  `test/goldens/goldens/` already holds them. The feature doc's surface map names the golden
+  file for each visual surface the feature touches.
+- A changed golden is reviewed **as a diff**, never accepted blind. A golden that updates
+  silently is worse than no golden, because it launders a regression into the baseline.
+- Where no golden exists, the feature doc carries a dated screenshot at
+  `docs/features/_media/<feature>/<surface>-YYYY-MM-DD.png`, replaced in the same commit that
+  changes the surface.
+- A visual surface with neither a golden nor a screenshot is a finding. The design audit
+  reports it rather than silently tolerating it.
+
+**Architecture changes: mermaid, never exported images.**
+
+- Diagrams live as fenced ```mermaid blocks inside the markdown that describes them. A fenced
+  diagram diffs in a pull request, renders in GitHub and in Notion, and an agent can update it
+  in the same commit as the code.
+- An exported PNG is a black box. It goes stale without anyone noticing, and nothing in review
+  can tell that it no longer matches. That is the same failure mode as a generated file that
+  gets hand-edited, and section 2 already forbids that one.
+- `docs/ARCHITECTURE.md` carries a top-level system diagram. **It currently has none**, and
+  was last edited 2026-07-05, before the host platform, the shared-ledger decision and the
+  security remediation.
+- Any change to collections, Cloud Function boundaries, cross-repo seams, or the matching
+  pipeline updates the relevant diagram in the same commit.
+
+**The rule, and it is the whole point.** Same commit, not a follow-up. A visual left for later
+is a visual that does not happen, which is exactly how `ARCHITECTURE.md` came to sit two months
+behind the code it claims to describe.
 
 ---
 

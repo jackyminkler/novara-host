@@ -12,7 +12,7 @@ import {
 import { Field, InlineText, Input, Textarea } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
 import type { CapturedContact, EventDoc, Person } from '../../data/types'
-import { addDays, formatDayLong, formatDue, startOfDay, toDateKey } from '../../lib/dates'
+import { addDays, formatDaySpoken, formatDue, startOfDay, toDateKey } from '../../lib/dates'
 import { initials } from '../../data/profiles'
 import { track } from '../../lib/analytics'
 
@@ -211,7 +211,7 @@ function nextConfirmed(
  */
 export function inviteLine(next: { event: EventDoc; startsAt: string }): string {
   const place = next.event.location.name.trim()
-  const when = formatDayLong(next.startsAt)
+  const when = formatDaySpoken(next.startsAt)
   const opening = place
     ? `${next.event.title} at ${place}, ${when}.`
     : `${next.event.title}, ${when}.`

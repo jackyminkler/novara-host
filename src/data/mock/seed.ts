@@ -1,4 +1,8 @@
 import type {
+  AvailabilitySettings,
+  Booking,
+  FriendLink,
+  Huddle,
   AvailabilityBlock,
   CapturedContact,
   CitywideMoment,
@@ -42,6 +46,10 @@ export interface MockStore {
   feedback: Feedback[]
   /** M1. The hp_profiles collection: one share card per host, keyed by uid. */
   profiles: HostCard[]
+  availabilitySettings: AvailabilitySettings | null
+  friendLinks: FriendLink[]
+  bookings: Booking[]
+  huddles: Huddle[]
 }
 
 const HOST = 'mock-host-uid'
@@ -985,6 +993,7 @@ export function buildStore(): MockStore {
         revoked: false,
         createdAt: NOW,
         lastUsedAt: null,
+        expiresAt: null,
       })),
     ),
     // The card token is the one scope with no event behind it, so eventId is
@@ -998,6 +1007,7 @@ export function buildStore(): MockStore {
       revoked: false,
       createdAt: NOW,
       lastUsedAt: null,
+      expiresAt: null,
     },
   ]
 
@@ -1119,5 +1129,12 @@ export function buildStore(): MockStore {
     people: [...buildPeople(), PROMOTED_FROM_CAPTURE],
     feedback: [],
     profiles,
+    // Availability starts empty on purpose: the first thing the page asks for
+    // is a real calendar, and a fixture calendar would make the derivation
+    // look like it works before it has seen anything true.
+    availabilitySettings: null,
+    friendLinks: [],
+    bookings: [],
+    huddles: [],
   }
 }

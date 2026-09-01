@@ -12,7 +12,8 @@
     "dev:mock": "VITE_DATA_MODE=mock vite",
     "typecheck": "tsc --noEmit",
     "test:rules": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 vitest run",
-    "test": "npm run test:rules"
+    "test": "npm run test:rules",
+    "test:unit": "vitest run --config vitest.unit.config.ts"
   },
   "dependencies": {
     "@amplitude/analytics-browser": "^2.45.6",

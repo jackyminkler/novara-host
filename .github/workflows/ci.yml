@@ -23,6 +23,32 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run build
 
+  rules-suite:
+    name: Rules ownership suite (emulator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - run: npm ci
+      - name: Ownership suite against the emulator
+        # The behavioural gate on every rules block. Negative-controlled 2026-08-31:
+        # without the four personal-availability blocks, 13 owner-side cases fail,
+        # so a green run means the blocks are present AND enforced — not merely that
+        # a field name appears somewhere, which is all the old contract check asked.
+        run: >
+          npx firebase-tools emulators:exec
+          --config firebase.emulators.json
+          --project demo-novara-host
+          --only firestore
+          "npm run test:rules"
+
   docs:
     name: Docs consistency
     runs-on: ubuntu-latest

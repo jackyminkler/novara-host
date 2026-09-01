@@ -121,6 +121,16 @@ export type GuestAction =
   | 'leave_contact'
 
 /** Only these actions are ever accepted. PRD 3.2, extended for M1. */
+  | 'book_slot'
+  | 'cancel_booking'
+  | 'join_huddle'
+  | 'cast_vote'
+
+/**
+ * Only these actions are ever accepted. The first four are PRD 3.2; the two
+ * booking actions are F18 and are refused for every scope except `booking`.
+ * Still two endpoints, per the standing rule against a third.
+ */
 export const GUEST_ACTIONS: GuestAction[] = [
   'respond_dates',
   'update_task',
@@ -128,4 +138,88 @@ export const GUEST_ACTIONS: GuestAction[] = [
   'add_note',
   'update_deliverable',
   'leave_contact',
+  'book_slot',
+  'cancel_booking',
 ]
+
+/** F18. A booking link is not about an event, so it gets its own payload. */
+export type BookingKind = 'coffee' | 'run' | 'call'
+
+export interface BookingSlot {
+  kind: BookingKind
+  startsAt: string
+  endsAt: string
+  durationMinutes: number
+}
+
+/** A stretch the host is open. Epoch milliseconds, short keys to stay small. */
+export interface BookingWindow {
+  s: number
+  e: number
+}
+
+/** A thing to do together. The duration is a suggestion, not a fixed length. */
+export interface BookingKindTemplate {
+  kind: BookingKind
+  label: string
+  defaultMinutes: number
+  choices: number[]
+}
+
+export interface BookingView {
+  scope: 'booking'
+  hostName: string
+  friendName: string
+  /**
+   * The host's IANA zone. Times are absolute, so nothing needs converting,
+   * but a friend in another city has to be told whose morning this is.
+   */
+  hostZone: string
+  kinds: BookingKindTemplate[]
+  /**
+   * Only the open stretches, never the calendar. The host's events, titles,
+   * and locations are computed against on the server and never sent here.
+   */
+  windows: BookingWindow[]
+  /** What this friend has already booked, so the page can show and cancel it. */
+  mine: (BookingSlot & { id: string })[]
+}
+
+
+/** A group finding a time together. One link, everyone, expires. */
+export interface HuddleParticipantView {
+  id: string
+  name: string
+  /** Their free time. Titles never exist on this path: freebusy has none. */
+  free: { s: number; e: number }[]
+}
+
+export interface HuddleView {
+  scope: 'huddle'
+  huddleId: string
+  title: string
+  durationMinutes: number
+  horizonDays: number
+  weekdays: number[]
+  participants: HuddleParticipantView[]
+  /** Slot start in epoch milliseconds as a string key, to participant ids. */
+  votes: Record<string, string[]>
+  settledStartsAt: string | null
+  expiresAt: string | null
+  /**
+   * Who this browser is, once they have joined. Held by the page rather than a
+   * cookie: a huddle is a moment, not a session worth persisting.
+   */
+  you: string | null
+}
+
+/** What hpGuestView returns. Discriminated by scope. */
+export type GuestPayload = GuestView | BookingView | HuddleView
+
+export function isBookingView(view: GuestPayload): view is BookingView {
+  return view.scope === 'booking'
+}
+
+export function isHuddleView(view: GuestPayload): view is HuddleView {
+  return view.scope === 'huddle'
+}

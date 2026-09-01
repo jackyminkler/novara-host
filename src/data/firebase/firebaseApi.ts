@@ -15,6 +15,9 @@ import { app, auth, db } from '../../lib/firebase'
 import type {
   HostApi,
   AvailabilityInput,
+  AvailabilitySettingsPatch,
+  FriendLinkInput,
+  HuddleInput,
   ContactInput,
   CreateEventInput,
   FeedbackInput,
@@ -30,6 +33,10 @@ import type {
 } from '../api'
 import type {
   AvailabilityBlock,
+  AvailabilitySettings,
+  Booking,
+  FriendLink,
+  Huddle,
   CapturedContact,
   CitywideMoment,
   CrewMember,
@@ -55,6 +62,7 @@ import {
   templateFromEvent,
 } from '../instantiate'
 import { mergeRows, normalizeEmail, personFromContact, type PersonDoc } from '../people/merge'
+import { normalizeAvailability } from '../availabilitySettings'
 
 // Every top-level collection is hp_ prefixed and carries its own explicit
 // rules match block. Subcollections hang off hp_events and are never reached
@@ -67,6 +75,13 @@ const TEMPLATES = 'hp_templates'
 const CONTACTS = 'hp_contacts'
 const AVAILABILITY = 'hp_availability'
 const MOMENTS = 'hp_moments'
+// hp_availability already holds the day-level away and open bands from F10, so
+// the personal availability settings document gets its own collection rather
+// than sharing one.
+const AVAILABILITY_SETTINGS = 'hp_availabilitySettings'
+const FRIEND_LINKS = 'hp_friendLinks'
+const BOOKINGS = 'hp_bookings'
+const HUDDLES = 'hp_huddles'
 const TOKENS = 'hp_guestTokens'
 const PEOPLE = 'hp_people'
 const FEEDBACK = 'hp_feedback'
@@ -494,6 +509,7 @@ export const firebaseApi: HostApi = {
       revoked: false,
       createdAt: now(),
       lastUsedAt: null,
+      expiresAt: null,
     }
     batch.set(doc(db, TOKENS, id), record)
 
@@ -677,6 +693,7 @@ export const firebaseApi: HostApi = {
       scope: 'card',
       subjectId: uid,
       revoked: false,
+      expiresAt: null,
       createdAt: now(),
       lastUsedAt: null,
     }
@@ -699,6 +716,121 @@ export const firebaseApi: HostApi = {
 
   async deleteAvailability(blockId) {
     await deleteDoc(doc(db, AVAILABILITY, blockId))
+  },
+
+  // F14 to F19. One settings document per host, keyed by uid so there is
+  // nothing to list and no index to build.
+  async getAvailabilitySettings() {
+    const snap = await getDoc(doc(db, AVAILABILITY_SETTINGS, currentUid()))
+    // Normalized on read so a document written under an earlier shape cannot
+    // reach the UI missing a field. See src/data/availabilitySettings.ts.
+    return normalizeAvailability(snap.data() as Partial<AvailabilitySettings>, currentUid())
+  },
+
+  async saveAvailabilitySettings(patch: AvailabilitySettingsPatch, uid: string) {
+    // Merge rather than replace: the page saves one field at a time as she
+    // changes it, and a full write would drop the published offers.
+    await setDoc(doc(db, AVAILABILITY_SETTINGS, uid), { ...patch, ownerUid: uid }, { merge: true })
+  },
+
+  async listFriendLinks() {
+    return readOwned<FriendLink>(FRIEND_LINKS)
+  },
+
+  async createFriendLink(input: FriendLinkInput, uid: string) {
+    const tokenId = makeToken()
+    const batch = writeBatch(db)
+    const linkRef = doc(collection(db, FRIEND_LINKS))
+    batch.set(linkRef, { ...input, ownerUid: uid, tokenId, createdAt: now() })
+    // A booking token carries no eventId: it belongs to the host, not an
+    // event. See docs/Availability_Feature_Plan_v1.md section 4.
+    batch.set(doc(db, TOKENS, tokenId), {
+      ownerUid: uid,
+      eventId: null,
+      scope: 'booking',
+      subjectId: linkRef.id,
+      revoked: false,
+      createdAt: now(),
+      lastUsedAt: null,
+      // A friend link is meant to be kept, so it does not expire on its own.
+      expiresAt: null,
+    })
+    await batch.commit()
+    return { id: linkRef.id, token: tokenId }
+  },
+
+  async updateFriendLink(linkId, patch) {
+    await updateDoc(doc(db, FRIEND_LINKS, linkId), patch)
+  },
+
+  async deleteFriendLink(linkId) {
+    const snap = await getDoc(doc(db, FRIEND_LINKS, linkId))
+    const batch = writeBatch(db)
+    // Revoke before deleting. A link that outlives the row the host deleted is
+    // the worst failure this feature has.
+    const tokenId = snap.exists() ? (snap.data() as FriendLink).tokenId : null
+    if (tokenId) batch.update(doc(db, TOKENS, tokenId), { revoked: true })
+    batch.delete(doc(db, FRIEND_LINKS, linkId))
+    await batch.commit()
+  },
+
+  async listHuddles() {
+    return readOwned<Huddle>(HUDDLES)
+  },
+
+  async createHuddle(input: HuddleInput, uid: string) {
+    const tokenId = makeToken()
+    const batch = writeBatch(db)
+    const ref = doc(collection(db, HUDDLES))
+    batch.set(ref, {
+      ...input,
+      ownerUid: uid,
+      tokenId,
+      participants: [],
+      votes: {},
+      settledStartsAt: null,
+      createdAt: now(),
+    })
+    batch.set(doc(db, TOKENS, tokenId), {
+      ownerUid: uid,
+      eventId: null,
+      scope: 'huddle',
+      subjectId: ref.id,
+      revoked: false,
+      createdAt: now(),
+      lastUsedAt: null,
+      expiresAt: input.expiresAt,
+    })
+    await batch.commit()
+    return { id: ref.id, token: tokenId }
+  },
+
+  async extendHuddle(huddleId, expiresAt) {
+    const snap = await getDoc(doc(db, HUDDLES, huddleId))
+    if (!snap.exists()) return
+    const batch = writeBatch(db)
+    batch.update(doc(db, HUDDLES, huddleId), { expiresAt })
+    // The token carries the expiry the guest function checks, so both move or
+    // the link and the page disagree about whether it is alive.
+    batch.update(doc(db, TOKENS, (snap.data() as Huddle).tokenId), { expiresAt })
+    await batch.commit()
+  },
+
+  async deleteHuddle(huddleId) {
+    const snap = await getDoc(doc(db, HUDDLES, huddleId))
+    const batch = writeBatch(db)
+    if (snap.exists()) batch.update(doc(db, TOKENS, (snap.data() as Huddle).tokenId), { revoked: true })
+    batch.delete(doc(db, HUDDLES, huddleId))
+    await batch.commit()
+  },
+
+  async listBookings() {
+    const rows = await readOwned<Booking>(BOOKINGS)
+    return rows.filter((b) => b.status === 'booked')
+  },
+
+  async cancelBooking(bookingId) {
+    await updateDoc(doc(db, BOOKINGS, bookingId), { status: 'cancelled' })
   },
 
   async listMoments() {
