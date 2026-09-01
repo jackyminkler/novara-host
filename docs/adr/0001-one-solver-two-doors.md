@@ -2,6 +2,10 @@
 
 - **Status:** Proposed. **Open for a counter-proposal**, see Option G and the note at the end of
   Alternatives. This is a strawman written to be argued with, not a decision to implement.
+- **Routed 2026-09-01:** Jacky is sending this to an engineer friend for an architecture opinion.
+  Until that opinion lands and she flips the status, **no session should settle this, implement
+  either option, or treat the chosen option as decided.** The five constraints at the end of this
+  file are what to hand that reviewer, along with the options; not the conclusion.
 - **Supersedes:** the no-service decision recorded in `docs/build-log.md`, for non-JavaScript callers only
 - **Date:** 2026-09-01
 - **Deciders:** Jacky
