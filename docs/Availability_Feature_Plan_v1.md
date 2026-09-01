@@ -188,9 +188,11 @@ their calendar in two taps; after an unpicked cutoff the page says so plainly.
 
 ## 3. State of play, 2026-08-26
 
-Everything below is committed and pushed on `claude/personal-availability-calendar-fa0d89`
-(PR #1). Read `docs/build-log.md` for why each decision went the way it did; this section is only
-what exists and what does not.
+Everything below landed through PR #1 (`claude/personal-availability-calendar-fa0d89`) and
+PR #5 (`claude/availability-calendar-continue-750d53`). **Both are merged and both branches are
+deleted, so all of it is on `main` as of 2026-09-01**; the branch names are kept only so the
+commits stay findable. Read `docs/build-log.md` for why each decision went the way it did; this
+section is only what exists and what does not.
 
 **Built and verified:**
 
@@ -206,8 +208,7 @@ what exists and what does not.
 
 73 unit tests, both build roots typecheck clean, `npm run build` passes.
 
-**F20 built on top of this, 2026-08-26 night session** (branch
-`claude/availability-calendar-continue-750d53`): plans as their own sidebar surface with a
+**F20 built on top of this, 2026-08-26 night session** (PR #5, merged): plans as their own sidebar surface with a
 create flow and a detail page, per-weekday hours with published allowed windows, respond-by
 and happen-by deadlines with four guest phases, manual joins with optional bounded emails,
 the organizer's pick with a composer, the Google Calendar invite through `googleWrite` with
@@ -239,11 +240,13 @@ and real invite creation; both are code paths on machinery PR #1 already exercis
   "Update the invite" but not "Open in Google Calendar" until one update runs, because
   `htmlLink` lives only in the create response. One nullable field would fix it.
 
-**Blocked on Jacky, and it blocks real testing:** four rules blocks in `docs/pending-rules.md`
-(`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`). Verified against the
-deployed ruleset on 2026-08-26: not applied, not deployed. Until they are, `VITE_DATA_MODE=mock`
-is the only way to run this. The blocks are inert while the collections are empty, so applying
-them early costs nothing and applying them late is what holds up testing.
+**~~Blocked on Jacky, and it blocks real testing.~~ Unblocked 2026-08-31.** The four rules
+blocks (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`) were deployed
+2026-08-29 and read back from the Firebase Rules API on 2026-08-31, byte-identical to the
+consumer repo's `main`. They sit under `## Applied` in `docs/pending-rules.md` with the
+evidence. **`VITE_DATA_MODE=mock` is no longer the only way to run this**, which is the
+sentence most worth correcting here: it is still the fastest way to run UI work with no
+backend, and it is now a choice rather than the only option.
 
 ---
 
