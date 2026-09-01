@@ -13,6 +13,13 @@ export type AnalyticsEvent =
   | 'hp_people_list_viewed'
   | 'hp_person_viewed'
   | 'hp_person_note_saved'
+  // F14 to F19, availability. The import event is how "did she actually
+  // connect a calendar" gets answered without asking her.
+  | 'hp_calendar_imported'
+  | 'hp_friend_link_created'
+  | 'hp_booking_created'
+  | 'hp_booking_cancelled'
+  | 'hp_huddle_created'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

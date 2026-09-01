@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { connectAuthEmulator, getAuth, GoogleAuthProvider } from 'firebase/auth'
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore'
+import { dataMode } from '../data/api'
 
 // Emulator mode (VITE_USE_EMULATORS=true) is fully offline: demo project,
 // fake config, local auth and firestore. See README for the two commands.
@@ -9,7 +10,11 @@ export const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true'
 // Real config values come from .env.local (see .env.example). They identify
 // the shared Novara Firebase project; access control lives in security rules
 // and hp_config/allowlist, not in keeping these values hidden.
-const firebaseConfig = useEmulators
+// Mock mode never calls Firebase, but AuthProvider still imports this module,
+// so initializeApp runs and throws on an absent .env.local. Giving mock the
+// same placeholder config as the emulator makes `npm run dev:mock` genuinely
+// standalone, which is what the README promises it is.
+const firebaseConfig = useEmulators || dataMode === 'mock'
   ? {
       apiKey: 'demo-key',
       authDomain: 'localhost',

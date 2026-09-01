@@ -2,7 +2,15 @@
 
 This repo never deploys Firestore rules, indexes, or Storage rules. The consumer app repo owns `firestore.rules`, `firestore.indexes.json`, and `storage.rules` for the shared `novarasocial-dev` project.
 
-Workflow: when a new or changed `hp_` collection needs a rules match block, a composite index, or (from M1) a Storage rules path, the exact definition gets written under Pending below and surfaced to Jacky. She applies it through the consumer repo, then the entry moves to Applied with the date. Queries that need a composite index fail at runtime until the index is applied and built, so entries land here as soon as the query is written.
+Workflow, rewritten 2026-08-31. The old gate was "write the block here, tell Jacky, stop" — a human hand-off with no mechanical check behind it. It is why four deployed blocks sat recorded as Pending for two days while already live, and unprotected in production for days before that. The gate is now a PR plus two machines, and Jacky is a reviewer in it, not the deploy mechanism. Do not re-add her out of habit:
+
+1. Write the exact definition under **Pending** below.
+2. Mirror it into `emulator/firestore.rules` and add behavioural cases to `tests/ownership.rules.test.ts` — negative-control first: the new cases must fail against a ruleset without the block. A check that greps for a field name is not a test; one shipped here and passed for the whole life of the bug.
+3. Open a PR. CI runs the emulator ownership suite (`rules-suite` job). **Jacky reviews the PR. She does not run the deploy.**
+4. The block is applied to `novara/firebase/firestore.rules` and deployed from that repo's up-to-date `main` (never from a branch — a `--only firestore` deploy from a stale ref silently drops blocks). Target end-state: the deploy runs from `novara` CI on merge to `main`; until a deploy credential exists in that CI, whoever is at the keyboard runs the deploy command from `main`, as an executor, not an approver.
+5. **Applied means read back, not deployed.** An entry moves from Pending to Applied only when the live ruleset has been read back from the Firebase Rules API and matches — `novara/tools/rules_check.py` does exactly this (live release vs `main` vs the Applied blocks in this file) and runs in `novara` CI on weekdays, so drift is caught even with no commits.
+
+Queries that need a composite index fail at runtime until the index is applied and built, so entries land here as soon as the query is written.
 
 Reminders for whoever writes entries here:
 
@@ -11,9 +19,132 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-Nothing pending.
+> **Status 2026-08-31: nothing pending.** The four personal-availability blocks
+> (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`) are
+> deployed and read back from the Firebase Rules API; see the first entry under
+> Applied.
 
 ## Applied
+
+### Personal availability: `hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`
+
+**Deployed 2026-08-29, read back and verified 2026-08-31.** All four blocks are live in the
+shared ruleset, so the gate on taking personal availability and huddles off mock data is open.
+
+Read-back evidence, first-hand from the Firebase Rules API for `novarasocial-dev` on 2026-08-31:
+
+- The `cloud.firestore` release points at ruleset `1b8a44f6-c160-44e0-a40f-5824c2687017`
+  (release updateTime `2026-08-29T22:36:31.322525Z`, ruleset createTime
+  `2026-08-29T22:36:31.060527Z`).
+- The downloaded ruleset source is byte-identical to the consumer repo's `main` at `fd6c693`:
+  37,014 bytes on both sides, the same sha256 on both sides
+  (`fe9c9c715afe3f35692df75062e70f31056967710fc82adbbc580f872192c3f5`), an empty `diff`.
+- All four match blocks were grepped out of the API response itself, not out of a checkout, and
+  each matches the block text below verbatim after the uniform four-space nesting indent every
+  `hp_` block gets. Placement landed as prescribed: after `hp_feedback`, in the same scope as
+  `hpOwns()` and `hpOwnsNew()`. `hp_availability` (the day-level bands from F10) still exists
+  separately, so the two similarly named collections did not get folded into one.
+
+Neither recorded failure mode recurred, though the second came close in a new form:
+
+- **Nothing is stranded.** `300f3dd` (the four blocks) and `43663ec` are both ancestors of
+  consumer `origin/main`, so deployed, `main`, and this file agree.
+- **The deploy outran its record here by two days.** The consumer-repo session that added the
+  consumer-side `admin_mirror` block deployed both changes together on 2026-08-29 with
+  `--only firestore:rules` (commit `43663ec`, "rule admin_mirror, and deploy it with the four
+  hp_ blocks", committed six minutes after the release updated). It merged to `main` and wrote
+  an ops-log row the same day calling SEC1 closed, so this time the miss was narrower than the
+  two incidents below: the row claimed closure on the deploy's exit alone, with no Rules API
+  read-back, and this file never moved, so these entries sat under Pending for two days while
+  the blocks were already live, and the consumer backlog yaml still said unprotected on
+  2026-08-31. Applied still means read back and verified; that happened 2026-08-31, and it is
+  what moved this entry.
+
+The ownership suite (`tests/ownership.rules.test.ts`) is green at 99 of 99 cases on 2026-08-31.
+That is a regression check on the previously applied blocks only: `emulator/firestore.rules` and
+the suite do not yet mention these four collections, so for now they are verified by read-back
+and verbatim match, not rehearsed on the emulator. A task chip to extend the suite was filed
+with Jacky on 2026-08-31.
+
+Superseded within hours, same day: `8c3528d` mirrors the four blocks into
+`emulator/firestore.rules` and rehearses them in the ownership suite with negative controls,
+`533bd90` replaces the human hand-off with the PR-plus-two-machines gate now described at the
+top of this file, and `novara/tools/rules_check.py` (consumer CI, `rules-drift.yml`) re-checks
+live ruleset against consumer `main` against this file's Applied blocks on weekdays. The task
+chip above was withdrawn as superseded by the git-index-lock-recovery session, so the previous
+paragraph describes the state for part of 2026-08-31 only.
+
+The original entries follow, as written.
+
+**Written 2026-08-26 for F14 to F19.** Three new top-level collections. Nothing in the app can
+reach them in `firebase` data mode until these blocks are applied, so this is the gate on taking
+the feature off mock.
+
+`hp_availabilitySettings` is keyed by uid, one document per host, so the owner check is on the
+document id rather than a field. **Apply it verbatim rather than folding it into the `hpOwns()`
+shape for consistency.**
+
+The document does carry an `ownerUid`, so `hpOwns()` would also work, and that is exactly why this
+needs saying: the reason is not that the other form fails. It is that a document-id check does not
+depend on a field having been written correctly. The id *is* the owner, so no write, however
+buggy, can produce a document whose id and `ownerUid` disagree in a way the rule would accept.
+`hpOwns()` trusts a field; this trusts the address.
+
+```
+match /hp_availabilitySettings/{uid} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}
+
+match /hp_friendLinks/{linkId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+
+match /hp_bookings/{bookingId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+```
+
+**Guests are not in these rules on purpose.** A friend holding a booking link never touches
+Firestore. `hpGuestView` and `hpGuestSubmit` read and write these three collections with the
+Admin SDK, which bypasses rules by design, and scope every access by hand to the one friend
+link the token names. The rules above only have to answer "may this signed-in host reach her own
+rows", same as every other `hp_` collection.
+
+**No composite index needed.** The one non-trivial query is in the guest function:
+`hp_bookings` where `ownerUid ==` and `status ==`. Two equality filters are served by the
+single-field indexes Firestore builds automatically. If an `orderBy` is ever added to that
+query, it becomes a composite index and belongs back in this file before the query ships.
+
+**One schema change to an existing collection, no rules change.** `hp_guestTokens` documents
+now carry `eventId: null` for the `booking` and `huddle` scopes, where every other scope carries
+an event id, plus a nullable `expiresAt`. Nothing in the current ruleset reads either field, so no
+block changes. Worth knowing because these are the first guest tokens not scoped to an event.
+
+**Part two, `hp_huddles`.** Written 2026-08-26. One more top-level collection, same shape of
+block as the three above.
+
+```
+match /hp_huddles/{huddleId} {
+  allow read: if hpOwns();
+  allow create: if hpOwnsNew();
+  allow update, delete: if hpOwns();
+}
+```
+
+**Guests are again absent on purpose, and here it matters more.** A huddle link is the one link
+in the product handed to a whole group rather than one person, and the people on it write to the
+document: joining adds a participant, voting changes a tally. None of that goes through Firestore.
+`hpGuestSubmit` does it with the Admin SDK, bounded by hand: names are capped at 80 characters,
+free-time lists at 500 entries, a vote must be a run of digits, and one participant holds one vote
+that moves rather than accumulates. The rules above only answer whether the signed-in host can
+reach her own huddles.
+
+**Still no composite index.** `hp_huddles` is only ever read by `ownerUid` for the host list and
+by document id for the guest function.
 
 ### Open signup and `hp_feedback`
 
@@ -22,12 +153,12 @@ Nothing pending.
 deployed ruleset carries the open-signup `hpIsHost()`, the `hp_feedback` block, and `hp_config`
 denied to everyone. All three landed.
 
-**But the consumer repo's `main` carries none of them.** They live on an unmerged branch,
-`hp-rules-open-signup-feedback` (`1518957`), which is what was deployed from. `main` at `bc1057a`
-still has the allowlist form of `hpIsHost()` and no `hp_feedback` block. A
-`firebase deploy --only firestore` from `main` would revert open signup and drop `hp_feedback`,
-locking out new signups and breaking the feedback button. Owner scoping and `hp_people` would
-survive, so the damage is partial rather than total, which arguably makes it easier to miss.
+**They were stranded off `main` for a day, and no longer are.** They were deployed from an
+unmerged branch, `hp-rules-open-signup-feedback` (`1518957`). `main` at `bc1057a` still had the
+allowlist form of `hpIsHost()` and no `hp_feedback` block, so a `firebase deploy --only firestore`
+from `main` would have reverted open signup and dropped `hp_feedback`, locking out new signups and
+breaking the feedback button. Owner scoping and `hp_people` would have survived, so the damage
+would have been partial rather than total, which is what would have made it easy to miss.
 
 **This is the second time in one day.** The same thing happened with `b88363f`, applied to
 production on 2026-08-19 and stranded off `main` until PR #199 merged it on 2026-08-24. Twice in
@@ -36,8 +167,19 @@ on and the merge is treated as tidying. The deploy is the thing that feels final
 downstream forces the merge. Worth a guard, for example refusing to deploy rules from a ref that is
 not an ancestor of `main`.
 
-**Fix: merge `hp-rules-open-signup-feedback` into `main`.** Nothing needs redeploying; production is
-already correct.
+**Resolved 2026-08-26: that branch merged as PR #204.** Consumer `main` pinned at `a781b62`
+carries the open-signup form of `hpIsHost()`, `hp_config` denied to everyone, and the
+`hp_feedback` block. Settled by reading the function bodies, not by grepping for the expression,
+per the trap below. The only surviving `allowlist` matches in that file are four comment lines;
+no live condition reads it. Deploying rules from `main` is safe again. Nothing needed redeploying;
+production was correct throughout.
+
+**Production re-verified first-hand the same day**, from the consumer repo, which unlike this one
+has the Firebase MCP: the deployed `novarasocial-dev` ruleset was read back through the Rules API
+and its `hp_` section matches `main` at `a781b62`: the same ten blocks (`hp_config`, `hp_orgs`,
+`hp_events` with its five subcollections, `hp_templates`, `hp_contacts`, `hp_availability`,
+`hp_moments`, `hp_guestTokens`, `hp_people`, `hp_feedback`), open-signup `hpIsHost()` included.
+Deployed, `main`, and this repo's `emulator/firestore.rules` now agree.
 
 **A third grep trap, caught this time.** Checking whether `main` had the change,
 `grep -c "sign_in_provider != 'anonymous'"` returned 1 and looked like a pass. It was matching a

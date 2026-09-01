@@ -54,6 +54,26 @@ export function formatLong(iso: string): string {
   return `${weekday}, ${MONTH[d.getMonth()]} ${d.getDate()}, ${formatTime(d)}`
 }
 
+/** "Friday, August 28", no time, for day headings above a list of times. */
+export function formatDayLong(iso: string): string {
+  const d = new Date(iso)
+  const weekday = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]
+  return `${weekday}, ${MONTH[d.getMonth()]} ${d.getDate()}`
+}
+
+/**
+ * "2026-08-27T09:00" for a datetime-local input, in local wall clock.
+ *
+ * Not toISOString().slice(): that converts to UTC, so a 9am Pacific slot goes
+ * into the field as 16:00 and reads back as four in the afternoon. The input
+ * has no zone of its own and means whatever the browser's zone is.
+ */
+export function toLocalInputValue(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => `${n}`.padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /** "Thu Aug 20", no time, for matrix column heads. */
 export function formatDayOnly(iso: string): string {
   const d = new Date(iso)

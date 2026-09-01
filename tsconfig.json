@@ -30,6 +30,7 @@
     "seed",
     "tests",
     "vitest.config.ts",
+    "vitest.unit.config.ts",
     "vite.config.js"
   ]
 }
