@@ -277,16 +277,34 @@ The Flutter consumer app built the same capability on its own branch
 (`claude/google-calendar-availability-87130e` in the novara repo, ADR-0004 there). It kept the
 load-bearing semantics: windows not slots, closed-is-a-flag, buffer padded on the busy side,
 clamp to now, a 45 minute floor, derive only on the owner's device, and store only derived
-windows. Four differences are deliberate and are recorded here so nobody later assumes the two
-products agree about everything.
+windows. Four differences are recorded here so nobody later assumes the two products agree
+about everything. **Three of them are design choices. The first is not**, and the distinction
+matters: it is an accident that was deliberately kept, which calls for routing around rather
+than for respecting a rationale.
 
-1. **Weekday index runs 0 = Monday there, 0 = Sunday here.** Their convention is entrenched in
-   two schemas and the matching scorer. This is the divergence most likely to cause a silent
-   wrong answer, because both sides are plain numbers: a weekday array crossing the boundary
-   unconverted produces a plausible result that is off by one, and `weekdays` on `SuggestOptions`
-   is exactly such an array. If host and consumer availability data ever meet, convert at the
-   boundary and give the two forms different field names so a raw number cannot pass for the
-   other.
+1. **Weekday index runs 0 = Monday there, 0 = Sunday here. Nobody chose this.** Each app took
+   its own language's date primitive and they disagree. JavaScript's `Date.getDay()` returns
+   0 for Sunday, and this repo indexes straight off it (`openHours[day.getDay()]`). Dart's
+   `DateTime.weekday` is 1 = Monday through 7 = Sunday, so the consumer subtracts one to get a
+   zero-based index (`novaraDayIndex`, in `lib/services/availability/derive_windows.dart`),
+   which lands on 0 = Monday.
+
+   **What is deliberate is leaving it alone.** Their convention is no longer just code: it is
+   stored in the `availabilityDays` map keys and in the `d` of every `effectiveWindows` entry,
+   and it is read by the matching scorer and its parity twins. Unifying means migrating live
+   documents plus a four-way engine change, to fix something that is not currently broken.
+
+   This is the divergence most likely to cause a silent wrong answer, because both sides are a
+   bare number with no type to tell them apart: an array crossing the boundary unconverted
+   produces a plausible result that is off by exactly one day, nothing throws, and a test that
+   does not probe a day boundary passes. `weekdays` on `SuggestOptions` is exactly such an
+   array. If host and consumer availability data ever meet, convert at the boundary and give the
+   two forms different field names so a raw number cannot pass for the other.
+
+   **This is a live input to ADR-0001.** The divergence is inert today because the two apps
+   never exchange weekday arrays. A solver reached over the wire by a Dart caller creates
+   exactly that exchange, as untyped JSON, at the one boundary where the type system is gone by
+   construction.
 
 2. **They allow multiple windows per day; this repo allows one.** Runners do two-a-days, and a
    single `DayHours` per weekday cannot express "open 6 to 8am and again 6 to 8pm". Their model is

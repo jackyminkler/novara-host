@@ -31,6 +31,14 @@ here. An entry in this file is the record that an invariant is currently guarded
   rejection of any field outside the interval-and-constraint set, and it must run against the
   validator rather than against a type, since types vanish at runtime and this boundary is
   crossed by untyped JSON from a Dart client.
+- **Assert the weekday form in the same test.** This repo indexes weekdays 0 = Sunday, off
+  JavaScript's `Date.getDay()`. The consumer app indexes 0 = Monday, off Dart's
+  `DateTime.weekday` minus one. Neither was chosen; the two language primitives disagree, and
+  the consumer's form is now entrenched in stored documents and in the matching scorer, so it
+  is not going to be unified. `weekdays` on `SuggestOptions` is a bare `number[]`, so an
+  unconverted array across this boundary returns a plausible ranking for the wrong day with
+  nothing thrown. The wire form must be named distinctly from the local one, and converted at
+  the edge. See `docs/Availability_Feature_Plan_v1.md` section 4b, item 1.
 - **Unblocks on:** the reviewer's recommendation landing and the ADR status flipping.
 
 ### One implementation of ranking, with no behaviour in the wrapper
