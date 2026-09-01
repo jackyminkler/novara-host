@@ -9,6 +9,14 @@ with one seam named as the place to start.
 
 ## 0. The prior decision, found and re-tested
 
+> **Superseded in part, 2026-09-01, and the correction sits at the other end of this file.**
+> This section concludes "not now" about a shared service. Section 7 and
+> [`docs/adr/0001-one-solver-two-doors.md`](adr/0001-one-solver-two-doors.md) reopened it the
+> same day, because the trigger this section names, the consumer app needing this derivation,
+> turned out to have already arrived. The reasoning below is kept exactly as written: it is
+> still the clearest statement of the case against a service, and anyone weighing ADR-0001's
+> Option G needs it. Read it as one side of an open question, not as the standing answer.
+
 There was a decision not to put the calendar work behind a shared service. It is in
 `docs/build-log.md`, in the entry that begins "It lives in this repo, not in `novara-matching`,
 and not in a new service," which is why it is hard to find: it was never written to a decisions
@@ -26,15 +34,19 @@ The reasoning, restated:
 Plus: a service was premature at one app and one user, and would have added a third repo to a
 rules-deploy handoff that had already stranded changes off `main` twice in one day.
 
-**Does it still hold?** For everything in this document, yes, and nothing here needs revisiting
-it. The whole flow below is host-side and single-repo.
+**Does it still hold?** For the four seams in this document, yes: they are host-side and
+single-repo, and none of them is blocked on the service question. For the solver underneath them,
+no. See section 7.
 
 **The one assumption worth flagging.** "Lifts into a package unchanged" is true between
 JavaScript codebases. The consumer app is Flutter, so a TypeScript package does not lift into it
 by a file move. That does not make the decision wrong, it means the trigger for revisiting is
 narrower than it reads: revisit when the **consumer app** needs this derivation, not when the
 host app grows. At that point the choice is a service or a Dart port, and `MATCHING.md`'s one
-engine no fork rule already argues for the service. Not now.
+engine no fork rule already argues for the service. **That point arrived on 2026-09-01, which is
+what section 7 records.** The sentence that stood here, "Not now", was wrong within a day of
+being written, and it is left visible rather than deleted because the speed of that reversal is
+itself worth knowing.
 
 ---
 
@@ -98,7 +110,7 @@ More than expected. Read these before designing anything.
 |---|---|---|
 | Interval algebra, merge, subtract, pad | `src/lib/availability/windows.ts` | Done, tested |
 | Free-window derivation from a calendar, with the judgment layer for travel and evenings | `src/lib/availability/derive.ts`, `spread.ts` | Done, tested |
-| **Multi-party ranking**, `coverage()` and `suggest()` | `src/lib/availability/coverage.ts` | Done, 12 tests. Ranks by turnout, then template time of day, then soonest, one option per day |
+| **Multi-party ranking**, `coverage()` and `suggest()` | `src/lib/availability/coverage.ts` | Done, 24 tests. Ranks by turnout, then template time of day, then soonest, one option per day |
 | Weekday filter and preferred start time in `suggest` | same | Done. A Saturday-only monthly cadence is already expressible |
 | Google Calendar read, freebusy scope for guests | `googleEvents.ts`, `src/host/googleCalendar.ts` | Done |
 | ICS import, read in the browser and discarded | `ics.ts` | Done |
