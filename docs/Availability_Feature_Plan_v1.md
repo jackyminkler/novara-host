@@ -188,9 +188,11 @@ their calendar in two taps; after an unpicked cutoff the page says so plainly.
 
 ## 3. State of play, 2026-08-26
 
-Everything below is committed and pushed on `claude/personal-availability-calendar-fa0d89`
-(PR #1). Read `docs/build-log.md` for why each decision went the way it did; this section is only
-what exists and what does not.
+Everything below landed through PR #1 (`claude/personal-availability-calendar-fa0d89`) and
+PR #5 (`claude/availability-calendar-continue-750d53`). **Both are merged and both branches are
+deleted, so all of it is on `main` as of 2026-09-01**; the branch names are kept only so the
+commits stay findable. Read `docs/build-log.md` for why each decision went the way it did; this
+section is only what exists and what does not.
 
 **Built and verified:**
 
@@ -206,8 +208,7 @@ what exists and what does not.
 
 73 unit tests, both build roots typecheck clean, `npm run build` passes.
 
-**F20 built on top of this, 2026-08-26 night session** (branch
-`claude/availability-calendar-continue-750d53`): plans as their own sidebar surface with a
+**F20 built on top of this, 2026-08-26 night session** (PR #5, merged): plans as their own sidebar surface with a
 create flow and a detail page, per-weekday hours with published allowed windows, respond-by
 and happen-by deadlines with four guest phases, manual joins with optional bounded emails,
 the organizer's pick with a composer, the Google Calendar invite through `googleWrite` with
@@ -239,11 +240,13 @@ and real invite creation; both are code paths on machinery PR #1 already exercis
   "Update the invite" but not "Open in Google Calendar" until one update runs, because
   `htmlLink` lives only in the create response. One nullable field would fix it.
 
-**Blocked on Jacky, and it blocks real testing:** four rules blocks in `docs/pending-rules.md`
-(`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`). Verified against the
-deployed ruleset on 2026-08-26: not applied, not deployed. Until they are, `VITE_DATA_MODE=mock`
-is the only way to run this. The blocks are inert while the collections are empty, so applying
-them early costs nothing and applying them late is what holds up testing.
+**~~Blocked on Jacky, and it blocks real testing.~~ Unblocked 2026-08-31.** The four rules
+blocks (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`) were deployed
+2026-08-29 and read back from the Firebase Rules API on 2026-08-31, byte-identical to the
+consumer repo's `main`. They sit under `## Applied` in `docs/pending-rules.md` with the
+evidence. **`VITE_DATA_MODE=mock` is no longer the only way to run this**, which is the
+sentence most worth correcting here: it is still the fastest way to run UI work with no
+backend, and it is now a choice rather than the only option.
 
 ---
 
@@ -274,16 +277,34 @@ The Flutter consumer app built the same capability on its own branch
 (`claude/google-calendar-availability-87130e` in the novara repo, ADR-0004 there). It kept the
 load-bearing semantics: windows not slots, closed-is-a-flag, buffer padded on the busy side,
 clamp to now, a 45 minute floor, derive only on the owner's device, and store only derived
-windows. Four differences are deliberate and are recorded here so nobody later assumes the two
-products agree about everything.
+windows. Four differences are recorded here so nobody later assumes the two products agree
+about everything. **Three of them are design choices. The first is not**, and the distinction
+matters: it is an accident that was deliberately kept, which calls for routing around rather
+than for respecting a rationale.
 
-1. **Weekday index runs 0 = Monday there, 0 = Sunday here.** Their convention is entrenched in
-   two schemas and the matching scorer. This is the divergence most likely to cause a silent
-   wrong answer, because both sides are plain numbers: a weekday array crossing the boundary
-   unconverted produces a plausible result that is off by one, and `weekdays` on `SuggestOptions`
-   is exactly such an array. If host and consumer availability data ever meet, convert at the
-   boundary and give the two forms different field names so a raw number cannot pass for the
-   other.
+1. **Weekday index runs 0 = Monday there, 0 = Sunday here. Nobody chose this.** Each app took
+   its own language's date primitive and they disagree. JavaScript's `Date.getDay()` returns
+   0 for Sunday, and this repo indexes straight off it (`openHours[day.getDay()]`). Dart's
+   `DateTime.weekday` is 1 = Monday through 7 = Sunday, so the consumer subtracts one to get a
+   zero-based index (`novaraDayIndex`, in `lib/services/availability/derive_windows.dart`),
+   which lands on 0 = Monday.
+
+   **What is deliberate is leaving it alone.** Their convention is no longer just code: it is
+   stored in the `availabilityDays` map keys and in the `d` of every `effectiveWindows` entry,
+   and it is read by the matching scorer and its parity twins. Unifying means migrating live
+   documents plus a four-way engine change, to fix something that is not currently broken.
+
+   This is the divergence most likely to cause a silent wrong answer, because both sides are a
+   bare number with no type to tell them apart: an array crossing the boundary unconverted
+   produces a plausible result that is off by exactly one day, nothing throws, and a test that
+   does not probe a day boundary passes. `weekdays` on `SuggestOptions` is exactly such an
+   array. If host and consumer availability data ever meet, convert at the boundary and give the
+   two forms different field names so a raw number cannot pass for the other.
+
+   **This is a live input to ADR-0001.** The divergence is inert today because the two apps
+   never exchange weekday arrays. A solver reached over the wire by a Dart caller creates
+   exactly that exchange, as untyped JSON, at the one boundary where the type system is gone by
+   construction.
 
 2. **They allow multiple windows per day; this repo allows one.** Runners do two-a-days, and a
    single `DayHours` per weekday cannot express "open 6 to 8am and again 6 to 8pm". Their model is

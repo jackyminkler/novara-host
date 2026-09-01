@@ -16,9 +16,13 @@
 
 ## Context
 
-The availability solver lives in `src/lib/availability/`: five pure files, roughly 700 lines,
-no firebase, react, clock or network imports. 73 unit tests across the module, 12 of them on
-`coverage.ts` alone. It derives free windows from a calendar, ranks candidate slots across N
+The availability solver lives in `src/lib/availability/`. The ranking core is five pure files,
+741 lines: `derive.ts`, `plan.ts`, `coverage.ts`, `spread.ts`, `windows.ts`, with no firebase,
+react, clock or network imports. The whole directory is 11 files and 2,411 lines once ingest
+(`ics.ts`, `googleEvents.ts`), `booking.ts`, `zones.ts` and `types.ts` are counted; only the
+five-file core is what a package would contain. 114 unit tests pass across the module, 24 of
+them on `coverage.ts` alone. (Counts verified 2026-09-01 against `main`; an earlier draft of
+this ADR said 73 and 12, which understated both.) It derives free windows from a calendar, ranks candidate slots across N
 people by turnout then time of day then soonest, and returns one option per day.
 
 An earlier decision, recorded in `docs/build-log.md` rather than here, ruled against putting it
@@ -66,7 +70,7 @@ local import does not. The moment a rule lives in the wrapper rather than the mo
 implementations again, and the wrapper is the easiest place for that to happen unnoticed.
 
 **Where it lives.** The solver becomes a small versioned package, `@novara/solver`, in its own
-repository: five pure files, roughly 700 lines, its tests, and nothing else. Both JavaScript
+repository: the five-file ranking core described above, its tests, and nothing else. Both JavaScript
 codebases take it as a pinned dependency. The callable that fronts it lives in the **consumer
 repo's Functions codebase**, because the consumer is the app that can only reach the solver over
 the wire and is the surface that will own scheduling long term.
@@ -205,7 +209,7 @@ the service only ever sees integers.
 
 - **Invariant: raw calendar events never cross the wire. The solver accepts intervals and
   constraints, and nothing else.** Not titles, not attendees, not locations.
-- Enforced by: **no test exists yet.** File in `DEFERRED.md`. The test worth writing asserts the
+- Enforced by: **no test exists yet.** Filed in [`DEFERRED.md`](../../DEFERRED.md). The test worth writing asserts the
   callable's request schema rejects any field that is not an interval bound or a constraint.
 - Second invariant: one implementation, and no behaviour in the wrapper. Any Dart, Swift or
   Python re-implementation of ranking, or any ranking rule that lives in the callable rather than
