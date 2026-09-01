@@ -1,6 +1,6 @@
 # Product canon
 
-**Last updated:** 2026-08-28
+**Last updated:** 2026-08-31
 **Tier:** Reference, a pointer file. It holds no content of its own on purpose.
 
 ## Start here
@@ -27,6 +27,7 @@ non-code repo. This file exists so a session opening `novara-host` can find them
 | Consumer PRD v2, F1 to F43 | `03-product/prds/Novara_Consumer_PRD_v2.md` |
 | Plan type library v1 | `03-product/prds/Novara_Plan_Type_Library_v1.md` |
 | **Design rules v1, normative** | `03-product/design/Novara_Design_Rules_v1.md` |
+| Matching design rules, R1 to R7 | `03-product/matching/design-rules.md` |
 | Reconciliation against code, 2026-08-28 | `00-now/audits/2026-08-28-prd-v2-vs-code-reconciliation.md` |
 
 **`Novara_Design_Rules_v1.md` applies to Novara Hosts, to guest token pages, and to share cards,
@@ -55,27 +56,32 @@ motion. This is a recommendation with a position, not yet a settled price.
 PRD v2 F41: after the shared `people` and `interactions` collections land and are verified in
 `novara`, host reads switch from `hp_people` to `people` and the `hp_` equivalent retires.
 
-**Status as of 2026-08-28: not started, and correctly blocked.** No `people` or `interactions`
-collection exists in any repo, in any branch, or in the deployed rules. The PRD makes this a
-watched task, explicitly not part of an unattended pass, and requires it to be complete before
-anyone else works in this repo.
+**Status as of 2026-08-31: not started, and correctly blocked.** No `people` or `interactions`
+collection exists in any repo, in any branch, or in the deployed rules.
 
-**The seam is small, which is good news.** `hp_people` is read at
-`src/data/firebase/firebaseApi.ts:506` and `:511` and updated at `:516`. There is no create path in
-app code; documents are created out of band by `seed/people-store.ts`. Three reads and one write,
-all in one file.
+**What the constraint means, amended 2026-08-31.** The earlier wording here — "requires it to be
+complete before anyone else works in this repo" — read literally blocks this repo forever behind a
+task that has not started and depends on collections that exist nowhere. The operative constraints
+are narrower, and they are the whole of it: **do not run the cutover unattended** (it is a watched
+task), and **do not have two people in the `hp_people` read paths at once** while the cutover is in
+flight. Everything else in this repo is unblocked by F41.
+
+**The seam is small, which is good news.** Every touch goes through the `PEOPLE` constant in
+`src/data/firebase/firebaseApi.ts`: a list read, a document read, and one update — two reads and
+one write, all in one file (measured 2026-08-31; the earlier `:506`/`:511`/`:516` line numbers have
+drifted, so find the constant, not the lines). There is no create path in app code; documents are
+created out of band by `seed/people-store.ts`.
 
 ## Two things owed to `novara` from here
 
-1. **Four collections are written into the consumer ruleset and not yet deployed.**
-   `hp_availabilitySettings`, `hp_bookings`, `hp_friendLinks` and `hp_huddles`. Updated
-   2026-09-01: the earlier wording here said they had no block at all, which was true on 2026-08-26
-   and stopped being true on 2026-08-28. Per `docs/pending-rules.md`, they now exist in
-   `novara/firebase/firestore.rules` but stay under **Pending** rather than Applied, because
-   Applied in that file means deployed *and read back from the Firebase Rules API*. Until that
-   read-back happens these four collections are unprotected in production and the availability
-   features cannot run in `firebase` data mode. This repo cannot deploy rules by design, per
-   ADR-0001 in `novara`.
+1. ~~Four collections are written into the consumer ruleset and not yet deployed.~~
+   **Resolved 2026-08-31.** `hp_availabilitySettings`, `hp_bookings`, `hp_friendLinks` and
+   `hp_huddles` were deployed 2026-08-29 and read back from the Firebase Rules API on 2026-08-31:
+   ruleset `1b8a44f6-c160-44e0-a40f-5824c2687017`, byte-identical to consumer `main`. The first
+   Applied entry in `docs/pending-rules.md` carries the evidence, and
+   `tests/ownership.rules.test.ts` now rehearses all four on the emulator, negative-controlled.
+   The availability features are clear to run in `firebase` data mode. This repo still cannot
+   deploy rules by design, per ADR-0001 in `novara`.
 2. ~~`MATCHING.md` here is a regenerated v1.6.1 sitting as an uncommitted working tree change.~~
    **Resolved 2026-08-28 in `f492a67`.** The working tree and `HEAD` both carry v1.6.2 at md5
    `142f77f6`. Verified 2026-09-01 by comparing `md5sum MATCHING.md` against
