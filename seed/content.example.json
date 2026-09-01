@@ -9,7 +9,11 @@
     "",
     "Task offsets are days relative to the event: -35 means 35 days before,",
     "2 means two days after. Run of show offsets are minutes from the start.",
-    "ownerSlot is either 'host', 'all', or the exact name of a role slot."
+    "ownerSlot is either 'host', 'all', or the exact name of a role slot.",
+    "",
+    "To rename a template or partner that is already in Firestore, add a",
+    "\"renameFrom\" field holding the old name. Without it the rename creates a",
+    "second document and the events keep pointing at the old one."
   ],
   "ownerUid": "REPLACE_WITH_HOST_UID",
   "templates": [
@@ -35,6 +39,7 @@
   "orgs": [
     {
       "name": "Example Partner",
+      "renameFrom": "Old name, only while renaming something already in Firestore",
       "type": "vendor",
       "description": "One line about what they do.",
       "contacts": [{ "name": "Their name", "role": "Owner", "email": "them@example.com" }],

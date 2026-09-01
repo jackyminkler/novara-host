@@ -231,13 +231,27 @@ export default function OverviewTab() {
         </Card>
 
         <Card>
+          <Eyebrow className="mb-[5px]">Description</Eyebrow>
+          {/* Shown on the events list since that page was built, but until now
+              it could only be set while creating the event. */}
+          <InlineText
+            ariaLabel="Event description"
+            value={event.description}
+            placeholder="A line or two about what this one is"
+            multiline
+            onCommit={(v) => updateEvent({ description: v })}
+            textClass="text-[13px]"
+          />
+        </Card>
+
+        <Card>
           <Eyebrow className="mb-[5px]">Campaign goal</Eyebrow>
           <InlineText
             ariaLabel="Campaign goal"
             value={event.campaignGoal}
             placeholder="App launch, feature promo, hiring, growing the regulars"
             onCommit={(v) => updateEvent({ campaignGoal: v })}
-            className="!text-[13px]"
+            textClass="text-[13px]"
           />
           {confirmed && (
             <>

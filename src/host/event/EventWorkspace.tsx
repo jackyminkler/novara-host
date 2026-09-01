@@ -3,7 +3,8 @@ import { NavLink, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { Page } from '../pages/Page'
 import { useAsync, useMutation } from '../useApi'
 import { useHost } from '../AuthProvider'
-import { Chip, ErrorState, Loading, PageTitle, Sub, cx } from '../../ui/primitives'
+import { Chip, ErrorState, Loading, Sub, cx } from '../../ui/primitives'
+import { InlineText } from '../../ui/form'
 import type { ChipTone } from '../../ui/primitives'
 import type { EventStatus } from '../../data/types'
 import { EventProvider } from './EventContext'
@@ -68,13 +69,34 @@ export default function EventWorkspace() {
   const status = STATUS[data.event.status]
   const base = `/app/events/${eventId}`
 
+  // An empty title is refused rather than saved. The title is not only this
+  // heading: it names the event in the list, on the calendar chips, and on
+  // every guest page built from a token, so blanking it here would leave
+  // partners looking at an unnamed event. InlineText keeps its own
+  // defaultValue, so the box still shows what was typed until the next load
+  // refreshes it; nothing is written, which is the part that matters.
+  const commitTitle = (next: string) => {
+    if (!next) return
+    run((api) => api.updateEvent(eventId, { title: next }))
+  }
+
   return (
     <EventProvider value={{ bundle: data, reload, run, busy, hostName: host.shortName }}>
       <Page>
         <div className="mb-[6px] flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <PageTitle className="text-[19px]">{data.event.title}</PageTitle>
-            {data.event.location.name && <Sub>{data.event.location.name}</Sub>}
+          <div className="min-w-0 flex-1">
+            {/* The title is the one field on an event that had no edit state
+                anywhere, so a name typed at creation was permanent. It reads as
+                a heading and edits in place, which is the rule in PRD 4.7:
+                everything the host sees, the host can edit. */}
+            <InlineText
+              value={data.event.title}
+              ariaLabel="Event title"
+              textClass="text-[19px]"
+              className="-mx-2 font-display font-semibold"
+              onCommit={commitTitle}
+            />
+            {data.event.location.name && <Sub className="px-2">{data.event.location.name}</Sub>}
           </div>
           <Chip tone={status.tone}>{status.label}</Chip>
         </div>
