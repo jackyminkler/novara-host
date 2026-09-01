@@ -227,6 +227,17 @@ reach her own huddles.
 **Still no composite index.** `hp_huddles` is only ever read by `ownerUid` for the host list and
 by document id for the guest function.
 
+**2026-08-26, F20 (plans) changes nothing here.** The feature added fields to `hp_huddles`
+documents and to participants inside them (hours, allowed windows, deadline dates and
+milliseconds, location, notes, a settled end, a Google event id, and per-participant email
+and provenance). `hpOwns()` and `hpOwnsNew()` read only `ownerUid`, so the block above
+applies verbatim, and the host list query is unchanged, so still no index. Guest-side, the
+new fields are bounded by hand in `hpGuestSubmit` per the change protocol in
+`docs/features/plans.md`: on this collection a guest-writable field is a security change
+even though it is never a rules change. Apply the four blocks exactly as already written.
+
+## Applied
+
 ### Open signup and `hp_feedback`
 
 **Deployed 2026-08-25 and verified live.** Read back from the Firebase Rules API for

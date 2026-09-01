@@ -25,15 +25,26 @@ export interface CalendarEventDraft {
   location: string
   startsAt: string
   endsAt: string
+  /**
+   * Who Google should invite. Address only: the name on the invitation is the
+   * invitee's own, and Google fills it in from their account.
+   *
+   * Absent or empty means nobody is emailed at all, which is the solo case and
+   * has to stay silent.
+   */
+  attendees?: { email: string }[]
 }
 
 interface GoogleEventResource {
   id?: string
+  /** The event's own page on Google Calendar. */
+  htmlLink?: string
   summary?: string
   description?: string
   location?: string
   start?: { dateTime?: string }
   end?: { dateTime?: string }
+  attendees?: { email: string }[]
   extendedProperties?: { private?: Record<string, string> }
 }
 
@@ -67,8 +78,25 @@ function toResource(draft: CalendarEventDraft): GoogleEventResource {
     location: draft.location,
     start: { dateTime: new Date(draft.startsAt).toISOString() },
     end: { dateTime: new Date(draft.endsAt).toISOString() },
+    // Omitted rather than sent empty. A PATCH carrying an empty list would
+    // uninvite everybody, and editing the notes on a settled plan must not do
+    // that.
+    ...(draft.attendees?.length
+      ? { attendees: draft.attendees.map((a) => ({ email: a.email })) }
+      : {}),
     extendedProperties: { private: { [TAG_KEY]: draft.sourceId, [TAG_SOURCE]: 'true' } },
   }
+}
+
+/**
+ * Google emails invitations and updates only when asked to.
+ *
+ * Asked only when there is somebody to email, so a plan the organizer keeps to
+ * herself stays quiet, and every later edit to one with guests reaches them the
+ * same way the first invitation did.
+ */
+function notifyQuery(attendees: CalendarEventDraft['attendees']): string {
+  return attendees && attendees.length > 0 ? '?sendUpdates=all' : ''
 }
 
 /** Our event for this source id, or null. Queried by tag, not by stored id. */
@@ -93,6 +121,12 @@ function isOurs(event: GoogleEventResource | null): boolean {
   return event?.extendedProperties?.private?.[TAG_SOURCE] === 'true'
 }
 
+export interface UpsertedEvent {
+  id: string
+  /** Where to see it on Google Calendar. Null when Google hands back no link. */
+  htmlLink: string | null
+}
+
 /**
  * Create or update the calendar event mirroring one host event.
  *
@@ -103,7 +137,8 @@ export async function upsertEvent(
   token: string,
   draft: CalendarEventDraft,
   calendarId = 'primary',
-): Promise<string> {
+): Promise<UpsertedEvent> {
+  const notify = notifyQuery(draft.attendees)
   const existing = await findTagged(token, calendarId, draft.sourceId)
   if (existing?.id) {
     // Belt and braces: findTagged matched our key, and we still check the
@@ -111,32 +146,44 @@ export async function upsertEvent(
     if (!isOurs(existing)) throw new GoogleWriteError('refusing to modify an event Novara did not create')
     const updated = await call<GoogleEventResource>(
       token,
-      `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.id)}`,
+      `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.id)}${notify}`,
       { method: 'PATCH', body: toResource(draft) },
     )
-    return updated.id ?? existing.id
+    return {
+      id: updated.id ?? existing.id,
+      htmlLink: updated.htmlLink ?? existing.htmlLink ?? null,
+    }
   }
   const created = await call<GoogleEventResource>(
     token,
-    `/calendars/${encodeURIComponent(calendarId)}/events`,
+    `/calendars/${encodeURIComponent(calendarId)}/events${notify}`,
     { method: 'POST', body: toResource(draft) },
   )
   if (!created.id) throw new GoogleWriteError('calendar did not return an event id')
-  return created.id
+  return { id: created.id, htmlLink: created.htmlLink ?? null }
 }
 
-/** Remove the mirror for one host event. Silent when there is nothing to remove. */
+/**
+ * Remove the mirror for one host event. Silent when there is nothing to remove.
+ *
+ * `notify` tells the guests the thing is off. Off by default, because deleting
+ * a mirror is usually housekeeping and mailing everyone about it would be
+ * alarming.
+ */
 export async function removeEvent(
   token: string,
   sourceId: string,
   calendarId = 'primary',
+  notify = false,
 ): Promise<void> {
   const existing = await findTagged(token, calendarId, sourceId)
   if (!existing?.id) return
   if (!isOurs(existing)) throw new GoogleWriteError('refusing to delete an event Novara did not create')
   await call<void>(
     token,
-    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.id)}`,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.id)}${
+      notify ? '?sendUpdates=all' : ''
+    }`,
     { method: 'DELETE' },
   )
 }

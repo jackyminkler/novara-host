@@ -128,8 +128,15 @@ export type GuestAction =
 
 /**
  * Only these actions are ever accepted. The first four are PRD 3.2; the two
- * booking actions are F18 and are refused for every scope except `booking`.
- * Still two endpoints, per the standing rule against a third.
+ * booking actions are F18 and are refused for every scope except `booking`;
+ * the two huddle actions are the same for `huddle`. Still two endpoints, per
+ * the standing rule against a third.
+ *
+ * This array is the runtime gate, and the type above is not. An action that
+ * exists in `GuestAction` but is missing here is refused as `unknown_action`
+ * before the scope handler ever runs, which is how the huddle actions were
+ * dead in production while mock mode, which never consults this array, kept
+ * showing them working.
  */
 export const GUEST_ACTIONS: GuestAction[] = [
   'respond_dates',
@@ -140,6 +147,8 @@ export const GUEST_ACTIONS: GuestAction[] = [
   'leave_contact',
   'book_slot',
   'cancel_booking',
+  'join_huddle',
+  'cast_vote',
 ]
 
 /** F18. A booking link is not about an event, so it gets its own payload. */
@@ -186,7 +195,10 @@ export interface BookingView {
 }
 
 
-/** A group finding a time together. One link, everyone, expires. */
+/**
+ * A group finding a time together. One link, everyone, expires. Called a plan
+ * in every string a guest reads.
+ */
 export interface HuddleParticipantView {
   id: string
   name: string
@@ -200,17 +212,41 @@ export interface HuddleView {
   title: string
   durationMinutes: number
   horizonDays: number
-  weekdays: number[]
+  /**
+   * The hours the organizer opened, already absolute. Their browser did the
+   * one wall-clock conversion there is, so a guest in another zone reads
+   * milliseconds and converts nothing. Null means unbounded, which is what a
+   * plan written before F20 has.
+   */
+  allowed: { s: number; e: number }[] | null
+  /** 'YYYY-MM-DD' for display. Deadlines are enforced on the Ms fields, never these. */
+  respondBy: string | null
+  respondByMs: number | null
+  happenBy: string | null
+  happenByMs: number | null
   participants: HuddleParticipantView[]
   /** Slot start in epoch milliseconds as a string key, to participant ids. */
   votes: Record<string, string[]>
   settledStartsAt: string | null
+  settledEndsAt: string | null
+  location: string
+  notes: string
+  hostName: string
+  /** True once the organizer has created the calendar invite. */
+  inviteSent: boolean
   expiresAt: string | null
   /**
    * Who this browser is, once they have joined. Held by the page rather than a
-   * cookie: a huddle is a moment, not a session worth persisting.
+   * cookie: a plan is a moment, not a session worth persisting.
    */
   you: string | null
+  /**
+   * The caller's own email, if they left one, so the page can show it back and
+   * let them change it. Only ever theirs: nobody else's address is in this
+   * view at all, which is the whole reason emails live off the participant
+   * list that everyone can see.
+   */
+  yourEmail: string | null
 }
 
 /** What hpGuestView returns. Discriminated by scope. */

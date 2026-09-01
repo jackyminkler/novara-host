@@ -1,8 +1,10 @@
 import type {
   AvailabilitySettings,
   Booking,
+  DayHoursDoc,
   FriendLink,
   Huddle,
+  HuddleParticipant,
   AvailabilityBlock,
   CapturedContact,
   CitywideMoment,
@@ -21,6 +23,15 @@ import type {
   Registration,
   Feedback,
 } from '../types'
+import {
+  allowedDayGroups,
+  buildAllowedWindows,
+  currentZone,
+  endOfDayMs,
+  freeFromDays,
+  suggest,
+} from '../../lib/availability'
+import { addDays, startOfDay, toDateKey } from '../../lib/dates'
 
 /**
  * Dev fixture only. Never seeds a real project and never ships in a Firebase
@@ -303,6 +314,138 @@ function buildPeople(): Person[] {
       registrations,
     }
   })
+}
+
+/** Stable so /g/{token} keeps working across reloads. 20 plus characters, base62 and dashes. */
+const PLAN_TOKEN = 'plan-game-night-demo-token'
+
+/**
+ * F20. One plan, already underway, so mock mode shows the feature with
+ * something in it rather than an empty list.
+ *
+ * Built off the real clock rather than the fixture's NOW, because a plan whose
+ * dates have gone is a plan in its "passed" phase, and a demo that quietly
+ * turns into that after a fortnight is a demo nobody trusts. Everyone here is
+ * fictional, like every other row in this file.
+ */
+function buildPlan(): { huddle: Huddle; token: GuestToken } {
+  const now = new Date()
+  const horizonDays = 21
+  const to = addDays(startOfDay(now), horizonDays)
+
+  // Weeknights after work, weekends from mid-morning. Exactly the case a list
+  // of weekdays could never say, which is why hours replaced it.
+  const hours: DayHoursDoc[] = [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+    start: day === 0 || day === 6 ? '10:00' : '18:00',
+    end: '22:30',
+    open: true,
+  }))
+  const windows = buildAllowedWindows(hours, now, to)
+  const days = allowedDayGroups(windows, now.getTime())
+  const short = (list: { start: number; end: number }[]) =>
+    list.map((w) => ({ s: w.start, e: w.end }))
+  const everything = short(windows)
+
+  const respondBy = toDateKey(addDays(startOfDay(now), 6))
+  const happenBy = toDateKey(addDays(startOfDay(now), 14))
+
+  const joined = (offsetMinutes: number) =>
+    new Date(now.getTime() - offsetMinutes * 60000).toISOString()
+
+  const participants: HuddleParticipant[] = [
+    {
+      id: 'pp-priya',
+      name: 'Priya Shah',
+      free: everything,
+      email: 'priya@example.com',
+      source: 'calendar',
+      joinedAt: joined(180),
+    },
+    {
+      id: 'pp-danny',
+      name: 'Danny Ko',
+      // Away the first evening, free after that.
+      free: short(freeFromDays(days.slice(1).map((d) => d.dayKey), days)),
+      email: 'danny@example.com',
+      source: 'calendar',
+      joinedAt: joined(150),
+    },
+    {
+      id: 'pp-jordan',
+      name: 'Jordan Reyes',
+      free: everything,
+      email: '',
+      source: 'calendar',
+      joinedAt: joined(90),
+    },
+    {
+      id: 'pp-brad',
+      name: 'Brad',
+      // Joined by hand with no Google at all: two days ticked, and his free
+      // time is exactly what those two days were open for.
+      free: short(freeFromDays(days.slice(0, 2).map((d) => d.dayKey), days)),
+      email: '',
+      source: 'manual',
+      joinedAt: joined(20),
+    },
+  ]
+
+  // Voted on the times the page itself would rank, rather than on invented
+  // milliseconds that would show up as votes for a slot nobody was offered.
+  const ranked = suggest(
+    participants.map((p) => ({
+      id: p.id,
+      label: p.name,
+      free: p.free.map((w) => ({ start: w.s, end: w.e })),
+    })),
+    { durationMinutes: 90, limit: 6, within: windows },
+  )
+  const votes: Record<string, string[]> = {}
+  if (ranked[0]) votes[String(ranked[0].start)] = ['pp-priya', 'pp-danny', 'pp-jordan']
+  if (ranked[1]) votes[String(ranked[1].start)] = ['pp-brad']
+
+  const createdAt = joined(240)
+  const huddle: Huddle = {
+    id: 'hd-game-night',
+    ownerUid: HOST,
+    title: 'Game night',
+    durationMinutes: 90,
+    horizonDays,
+    hours,
+    allowed: everything,
+    respondBy,
+    respondByMs: endOfDayMs(respondBy),
+    happenBy,
+    happenByMs: endOfDayMs(happenBy),
+    tokenId: PLAN_TOKEN,
+    participants,
+    votes,
+    settledStartsAt: null,
+    settledEndsAt: null,
+    location: '',
+    notes: '',
+    googleEventId: null,
+    hostDisplayName: 'Maya',
+    timeZone: currentZone(),
+    createdAt,
+    // Two weeks past the happen-by date, so the page outlives the outcome.
+    expiresAt: new Date(endOfDayMs(happenBy) + 14 * 86400000).toISOString(),
+  }
+
+  return {
+    huddle,
+    token: {
+      id: PLAN_TOKEN,
+      ownerUid: HOST,
+      eventId: null,
+      scope: 'huddle',
+      subjectId: huddle.id,
+      revoked: false,
+      createdAt,
+      lastUsedAt: null,
+      expiresAt: huddle.expiresAt,
+    },
+  }
 }
 
 export function buildStore(): MockStore {
@@ -980,6 +1123,8 @@ export function buildStore(): MockStore {
     { id: 'mo2', ownerUid: HOST, name: 'SF Tech Week', startDate: '2026-10-05', endDate: '2026-10-11' },
   ]
 
+  const plan = buildPlan()
+
   const tokens: GuestToken[] = [
     // A party without a link has no token document. The venue is one: the site
     // office answers email, not a link.
@@ -996,6 +1141,7 @@ export function buildStore(): MockStore {
         expiresAt: null,
       })),
     ),
+    plan.token,
     // The card token is the one scope with no event behind it, so eventId is
     // empty and the subject is the host.
     {
@@ -1135,6 +1281,6 @@ export function buildStore(): MockStore {
     availabilitySettings: null,
     friendLinks: [],
     bookings: [],
-    huddles: [],
+    huddles: [plan.huddle],
   }
 }

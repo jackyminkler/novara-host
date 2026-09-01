@@ -6,6 +6,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import {
+  CalendarCheck,
   CalendarDays,
   ChevronsLeft,
   Contact,
@@ -31,6 +32,8 @@ import EventWorkspace from "./event/EventWorkspace";
 import NewEventPage from "./pages/NewEventPage";
 import CalendarPage from "./pages/CalendarPage";
 import AvailabilityPage from "./pages/AvailabilityPage";
+import PlansPage from "./pages/PlansPage";
+import PlanDetailPage from "./pages/PlanDetailPage";
 import PartnersPage from "./pages/PartnersPage";
 import PeoplePage from "./pages/PeoplePage";
 import PersonDetailPage from "./pages/PersonDetailPage";
@@ -55,6 +58,7 @@ const NAV: NavItem[] = [
   { to: "/app/templates", label: "Templates", icon: LayoutTemplate },
   { to: "/app/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/app/availability", label: "Availability", icon: Clock },
+  { to: "/app/plans", label: "Plans", icon: CalendarCheck },
   { to: "/app/partners", label: "Partners", icon: Users },
   { to: "/app/people", label: "People", icon: Contact },
   { to: "/app/capture", label: "Capture", icon: NotebookPen },
@@ -220,6 +224,8 @@ export default function HostShell() {
           />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="availability" element={<AvailabilityPage />} />
+          <Route path="plans" element={<PlansPage />} />
+          <Route path="plans/:planId" element={<PlanDetailPage />} />
           <Route path="partners" element={<PartnersPage />} />
           <Route path="partners/new" element={<PartnerFormPage />} />
           <Route path="partners/:orgId/edit" element={<PartnerFormPage />} />

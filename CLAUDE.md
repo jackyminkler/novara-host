@@ -39,6 +39,7 @@ Strategy context (read on demand, do not import): docs/Novara_Host_Platform_Plan
 - Sentence case for all headings, buttons, and labels.
 - Plain, warm, non-corporate voice. Never use the word "engagement" in product copy.
 - Outputs are activities, tasks, and dates, never lists of people.
+- The group scheduling object is `Huddle` / `hp_huddles` in code and "plan" in every user-facing string. Do not rename either side toward the other; see `docs/features/plans.md`.
 
 ## Design system
 

@@ -63,7 +63,14 @@ export type AnalyticsEvent =
   | 'hp_friend_link_created'
   | 'hp_booking_created'
   | 'hp_booking_cancelled'
-  | 'hp_huddle_created'
+  // F20, plans. `hp_huddle_created` became `hp_plan_created` here. Safe to
+  // rename: the collection's rules were never deployed, so no production
+  // event ever fired under the old name and no dashboard reads it.
+  | 'hp_plan_created'
+  | 'hp_plan_joined'
+  | 'hp_plan_vote_cast'
+  | 'hp_plan_settled'
+  | 'hp_plan_invite_created'
 
 const apiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 

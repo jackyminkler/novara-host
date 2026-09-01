@@ -2,6 +2,73 @@
 
 Decisions made mid-build and feature ideas parked to protect scope. Newest first.
 
+## 2026-08-26, F20: huddles finished into plans
+
+Jacky's ask, night session: someone brand new plans a group thing end to end. Ten people,
+90 minutes, evenings or weekends, answers in by a date, done by a date, organizer picks,
+calendars get the invite. Everything landed as global capability on the existing huddle;
+the worked example (a fantasy football draft night) appears nowhere in the code.
+
+**"Plan" is the user-facing word, huddle stays the code word.** Jacky picked plan over
+huddle and poll. Renaming the code too would have churned the data model, the twins, and
+the pending rules block for zero behavior, so the boundary is: strings say plan, types say
+Huddle. Recorded in CLAUDE.md so the next session does not "fix" one into the other.
+
+**Hours replaced weekdays, and it fixed a real flaw on the way.** Weekday chips cannot say
+"after work", and freebusy counts 3am as free, so an unconstrained huddle could rank 2am
+top. Per-weekday open hours (same shape as the availability open hours, default 9:00 to
+22:00) bound every suggestion. Old documents migrate on read; none exist in production
+because the rules were never deployed.
+
+**Allowed windows are published, not recomputed.** The organizer's browser turns hours
+into absolute intervals at create and edit, the exact pattern availability publishing
+already uses, and for the same reason: wall clock to absolute conversion happens only
+where the wall clock is the organizer's own. Guests and the functions consume
+milliseconds. suggest() gained one option, within, so allowed hours, "not before now",
+and the happen-by bound are one mechanism instead of three filters.
+
+**Deadlines are a date string plus a precomputed end-of-day millisecond.** respondBy and
+happenBy edit as YYYY-MM-DD and enforce as numbers. The functions compare against
+Date.now() and never parse dates, so the second build root needs no zone logic to drift.
+Phase order: settled beats passed beats closed beats open, so a pick made at 11:59 still
+reads as settled after the cutoff.
+
+**The invite is Google's own machinery, not an email provider.** Creating the invite
+writes a tagged event on the organizer's calendar with everyone who left an email as an
+attendee and sendUpdates=all, so Google delivers the invites and every later edit. The
+settled guest page carries add-to-Google and a downloadable .ics for everyone else. This
+made googleWrite.ts's first caller, and emails ride on participants as an optional
+bounded field guests can clear.
+
+**A twin-drift bug, found by reading rather than clicking.** GUEST_ACTIONS in the
+functions build root never listed join_huddle and cast_vote, so every real huddle
+submission was refused as unknown_action before the scope branch ran. Mock mode bypasses
+the gate, which is why the flow looked verified. The fix is one line; the lesson is the
+one the file already carried: the two copies move together or not at all.
+
+**Guest-writable fields are a security change even with an empty rules diff.** Flagged by
+the consumer-repo rules session mid-build: Admin SDK writes bypass rules, so the
+hand-rolled bounds in hpGuestSubmit are the only validation hp_huddles gets. The email
+field shipped with its bounds in the same commit, and the handler is pinned to writing
+only the participants and votes keys. Now in the feature doc's change protocol.
+
+**hp_huddle_created was renamed to hp_plan_created.** The analytics file says never rename
+without updating the dashboard; the dashboard never saw the old name because the rules
+never deployed and no production event fired. Renamed now, while that is still true, with
+hp_plan_joined, hp_plan_vote_cast, hp_plan_settled, and hp_plan_invite_created beside it.
+
+**Plan links default to expiring two weeks after happen-by.** The old default was hours.
+Jacky's requirement is that coming back after the cutoff shows the pick or that no pick
+was made, which a dead link cannot do, so the link now outlives the outcome and the
+organizer can still extend or reopen it.
+
+**Joining by hand is picking days, not painting a grid.** A participant with no Google
+taps the days that could work; their free time is those days' allowed windows. One tap
+per day at 390 px, provenance kept (calendar or manual) the way date responses already
+keep theirs, and it removes the old dead end where no Google client id meant no joining
+at all.
+
+
 ## 2026-08-27, the M1 host build: everything concretely specified, in six commits
 
 Jacky asked for all remaining host functionality in the PRD with no milestone gating, to test

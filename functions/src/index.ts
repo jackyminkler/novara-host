@@ -479,6 +479,13 @@ async function buildBookingView(token: { id: string; data: TokenDoc }): Promise<
  * huddle makes: you see when the others are free, never what they are doing.
  * Ranking happens in the browser from exactly this data, so there is no second
  * copy of the suggestion algorithm here to drift from the one in src/lib.
+ *
+ * Emails are the one thing that is not shared. A participant gets their own
+ * back as `yourEmail` and nobody else's appears at all, because the address
+ * exists for the calendar invite rather than for the group to read.
+ *
+ * The defaults below are the same migration firebaseApi runs: a plan written
+ * before F20 has none of these fields, and null `allowed` means unbounded.
  */
 async function buildHuddleView(
   token: { id: string; data: TokenDoc },
@@ -489,35 +496,73 @@ async function buildHuddleView(
   const huddle = snap.data() as any;
   if (huddle.ownerUid !== token.data.ownerUid) throw new InvalidToken();
 
+  const participants = (huddle.participants ?? []) as any[];
+  const mine = you ? participants.find((p) => p.id === you) : null;
+
   return {
     scope: "huddle",
     huddleId: snap.id,
     title: huddle.title ?? "",
     durationMinutes: huddle.durationMinutes ?? 60,
     horizonDays: huddle.horizonDays ?? 30,
-    weekdays: huddle.weekdays ?? [],
-    participants: ((huddle.participants ?? []) as any[]).map((p) => ({
+    // The hours themselves stay host-side. Guests consume the absolute
+    // windows those hours already became.
+    allowed: huddle.allowed ?? null,
+    respondBy: huddle.respondBy ?? null,
+    respondByMs: huddle.respondByMs ?? null,
+    happenBy: huddle.happenBy ?? null,
+    happenByMs: huddle.happenByMs ?? null,
+    participants: participants.map((p) => ({
       id: p.id,
       name: p.name,
       free: p.free ?? [],
     })),
     votes: huddle.votes ?? {},
     settledStartsAt: huddle.settledStartsAt ?? null,
+    settledEndsAt: huddle.settledEndsAt ?? null,
+    location: huddle.location ?? "",
+    notes: huddle.notes ?? "",
+    hostName: (huddle.hostDisplayName as string) || "the organizer",
+    inviteSent: Boolean(huddle.googleEventId),
     expiresAt: huddle.expiresAt ?? null,
     you,
+    yourEmail: mine ? (mine.email ?? "") || null : null,
   };
 }
+
+/**
+ * Which of the four states a plan is in.
+ *
+ * A hand copy of planPhase in src/lib/availability/plan.ts, the same way this
+ * build root keeps its own copy of guestTypes: the functions have no path to
+ * src/. Five lines, and they move together. Deadlines are compared as numbers
+ * because the date strings carry no zone to parse them against.
+ */
+function huddlePhase(huddle: any, now: number): "open" | "closed" | "settled" | "passed" {
+  if (huddle.settledStartsAt) return "settled";
+  if (typeof huddle.happenByMs === "number" && now >= huddle.happenByMs) return "passed";
+  if (typeof huddle.respondByMs === "number" && now >= huddle.respondByMs) return "closed";
+  return "open";
+}
+
+/** Signals the endpoint to answer 403 closed. Nothing has been written. */
+const HUDDLE_CLOSED = Symbol("huddle_closed");
 
 /** Huddle writes. Joining replaces rather than duplicates; one vote each. */
 async function handleHuddleSubmit(
   token: { id: string; data: TokenDoc },
   action: GuestAction,
   payload: Record<string, unknown>,
-): Promise<string | null> {
+): Promise<string | null | typeof HUDDLE_CLOSED> {
   const ref = db.collection(HUDDLES).doc(token.data.subjectId);
   const snap = await ref.get();
   if (!snap.exists) throw new InvalidToken();
   const huddle = snap.data() as any;
+
+  // Before anything else. A plan that has settled, lapsed, or closed to
+  // answers takes no more of them, and refusing here means no partial write
+  // can happen on the way to finding that out.
+  if (huddlePhase(huddle, Date.now()) !== "open") return HUDDLE_CLOSED;
 
   let you = typeof payload.you === "string" ? payload.you.slice(0, 60) : null;
   const participants: any[] = huddle.participants ?? [];
@@ -527,13 +572,24 @@ async function handleHuddleSubmit(
     if (!name) return you;
     // Bounded: an unchecked list is a way to write a megabyte into someone
     // else's document, and no real calendar has a thousand free stretches in
-    // a month.
+    // a month. Finite rather than merely numeric, because NaN is a number and
+    // sorts against nothing.
     const free = (Array.isArray(payload.free) ? payload.free : [])
       .filter(
-        (w: any) => typeof w?.s === "number" && typeof w?.e === "number" && w.e > w.s
+        (w: any) => Number.isFinite(w?.s) && Number.isFinite(w?.e) && w.e > w.s
       )
       .slice(0, 500)
       .map((w: any) => ({ s: w.s, e: w.e }));
+
+    // Optional, and only ever used for the calendar invite. An absent key on a
+    // rejoin keeps whatever they left last time; a present one sets it, and an
+    // empty or malformed one clears it.
+    const emailGiven = "email" in payload;
+    const typed = payloadString(payload, "email", 120).trim();
+    const email = /^\S+@\S+\.\S+$/.test(typed) ? typed : "";
+    // Provenance, the way date responses already keep theirs. Anything that is
+    // not exactly "manual" is a calendar read.
+    const source = payload.source === "manual" ? "manual" : "calendar";
 
     const existing = you ? participants.find((p) => p.id === you) : null;
     if (existing) {
@@ -541,10 +597,23 @@ async function handleHuddleSubmit(
       // meeting should replace their answer, not appear twice.
       existing.name = name;
       existing.free = free;
+      existing.source = source;
+      if (emailGiven) existing.email = email;
+      else existing.email = existing.email ?? "";
     } else {
       you = `hp-${Date.now().toString(36)}${participants.length}`;
-      participants.push({ id: you, name, free, joinedAt: new Date().toISOString() });
+      participants.push({
+        id: you,
+        name,
+        free,
+        email,
+        source,
+        joinedAt: new Date().toISOString(),
+      });
     }
+    // Only `participants`, never a key derived from the payload. This handler
+    // is the only validation guest writes get, because the Admin SDK bypasses
+    // rules. See docs/features/plans.md, change protocol.
     await ref.update({ participants });
     return you;
   }
@@ -560,6 +629,7 @@ async function handleHuddleSubmit(
       if (at >= 0) ids.splice(at, 1);
     }
     votes[key] = [...(votes[key] ?? []), you];
+    // Only `votes`, for the same reason as above.
     await ref.update({ votes });
   }
 
@@ -699,6 +769,11 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
         return;
       }
       const you = await handleHuddleSubmit(token, action, payload);
+      // Settled, lapsed, or past its respond-by date. Nothing was written.
+      if (you === HUDDLE_CLOSED) {
+        res.status(403).json({ error: "closed" });
+        return;
+      }
       const view = await buildHuddleView(token, you);
       await touch(token.id);
       res.set("Cache-Control", "no-store");
