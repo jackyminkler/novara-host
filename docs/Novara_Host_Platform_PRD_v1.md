@@ -194,6 +194,8 @@ Also create `hp_events/{eventId}/log` free-text entries (host only) for day-of b
 
 ### 4.4 Design system
 
+**Superseded 2026-08-31. Host and consumer are one brand; there is no separate host palette.** Violet is `#6C3CE0`, ink `#1E1B26`, paper `#F9F8FC`, line `#E8E5EE`, and **no gradient appears on a button**. `#4F3BC9`, `#6C4FF0` to `#BB4FD4`, `#241F3D`, `#F8F7FC` and `#E9E7F0` are retired. Normative: `Novara_Design_Rules_v1.md` in `novara-brain`, which names Novara Hosts explicitly in scope. The superseded direction, kept for history:
+
 Direction A.1, locked August 19, 2026, carried in full by the versioned wireframe file. In short: field is the Novara light gray `#F8F7FC` with white surfaces and neutralized borders (`#E9E7F0`); ink `#241F3D`; Poppins for display, Instrument Sans for interface text; violet `#4F3BC9` reserved for meaning (active nav, chips, avatars, proposed-date marks, focus states); the two-stop gradient `#6C4FF0` to `#BB4FD4` at 135 degrees appears only on primary actions. The consumer app's three-stop violet to coral gradient stays retired here. Layout: labeled sidebar that collapses to an icon rail on split-view pages, with the page template map (overview stack, full-width collection, tabbed workspace, canvas, split, focus column, bare guest column) defined in the wireframe file. Guest pages are mobile-first at 390 px; host pages are desktop-comfortable.
 
 ### 4.5 Copy rules (hard requirements)

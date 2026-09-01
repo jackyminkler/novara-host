@@ -3,7 +3,15 @@
 Novara host platform: a coordination workspace for community event hosts. The host has an account; co-hosts, sponsors, vendors, and crew participate through optional tokenized guest links with no account. Web only.
 
 Cross-repo engineering conventions — commits, ADRs, invariants, releases — are in
-**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`). Repo gates and the
+**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`).
+
+**Product canon and the normative design rules are in `novara-brain`, indexed by
+`docs/PRODUCT_CANON.md`. Read that before building any feature or any UI here.**
+`Novara_Design_Rules_v1.md` names Novara Hosts, guest token pages and share cards explicitly in
+its scope, so it governs this repo too, not only the Flutter app. The rules broken most often: no
+em dashes anywhere, sentence case throughout, nothing above font weight 500, twelve colour tokens
+with no opacity variants, every number carries its unit, every screen defines five states, and no
+score on a person anywhere. Repo gates and the
 rules-ownership boundary are in `CONTRIBUTING.md`.
 
 Build contract: @docs/Novara_Host_Platform_PRD_v1.md
@@ -32,14 +40,29 @@ Strategy context (read on demand, do not import): docs/Novara_Host_Platform_Plan
 - Plain, warm, non-corporate voice. Never use the word "engagement" in product copy.
 - Outputs are activities, tasks, and dates, never lists of people.
 
-## Design system A.1 (locked August 19, 2026)
+## Design system
+
+> **Superseded, 2026-08-31.** "Design system A.1", locked August 19 2026, defined its own violet and
+> its own button gradient. It predates the colour correction of 2026-08-27 and was never swept.
+> **Host and consumer are one brand. There is no separate host palette.**
+> `Novara_Design_Rules_v1.md` in `novara-brain` is normative for this repo, and it names Novara
+> Hosts, guest token pages and share cards explicitly in scope.
 
 Tokens live in `src/index.css` as CSS variables and Tailwind theme colors. Never hardcode a hex in a component.
 
-- Field `#F8F7FC`, surface white, border `#E9E7F0`, hairline `#F0EFF5`.
-- Ink `#241F3D`, secondary text `#6B6880`, muted `#8D8A9E`.
-- Violet `#4F3BC9` is reserved for meaning: active nav, chips, avatars, proposed-date marks, focus states. Not decoration.
-- Gradient `#6C4FF0` to `#BB4FD4` at 135 degrees appears **only** on primary action buttons. The consumer app's three-stop violet to coral gradient is retired here.
+**The code has not been migrated yet.** `src/index.css` still carries the A.1 values, so what is in
+the repo today is not what the rules require. Do not treat the current CSS as authority and do not
+copy its violet into anything new. The file-by-file list is at
+`novara-brain/00-now/audits/2026-08-31-brand-palette-delta.md`.
+
+Canonical values, from design rules section 2.1:
+
+- Violet `#6C3CE0`, violet-tint `#F1EDFC`. **Retired: `#4F3BC9`, and the `#6C4FF0` to `#BB4FD4` gradient.**
+- Ink `#1E1B26`, secondary `#5C5766`, muted `#918B9C`. **Retired: `#241F3D`, `#6B6880`, `#8D8A9E`.**
+- Paper `#F9F8FC`, surface white, line `#E8E5EE`, line-2 `#D7D2E0`, neutral fill `#F3F1F7`.
+- Danger `#D64545`, success `#1D9E75`.
+- Violet is reserved for meaning: active nav, chips, avatars, proposed-date marks, focus states. Not decoration.
+- **No gradient on a button.** Gradients carry activity identity and appear in four places only: a plan-card identity block, a plan-detail hero, a moment surface (hero or CTA, not both), and share cards. A primary button is flat violet, radius 8, weight 500.
 - Poppins for display (headings, times, numerals), Instrument Sans for interface text.
 - Icons: Lucide only.
 - Borders are hairlines (0.5px), radii 8 to 13px, shadows barely there.
