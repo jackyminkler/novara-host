@@ -2,7 +2,15 @@
 
 This repo never deploys Firestore rules, indexes, or Storage rules. The consumer app repo owns `firestore.rules`, `firestore.indexes.json`, and `storage.rules` for the shared `novarasocial-dev` project.
 
-Workflow: when a new or changed `hp_` collection needs a rules match block, a composite index, or (from M1) a Storage rules path, the exact definition gets written under Pending below and surfaced to Jacky. She applies it through the consumer repo, then the entry moves to Applied with the date. Queries that need a composite index fail at runtime until the index is applied and built, so entries land here as soon as the query is written.
+Workflow, rewritten 2026-08-31. The old gate was "write the block here, tell Jacky, stop" — a human hand-off with no mechanical check behind it. It is why four deployed blocks sat recorded as Pending for two days while already live, and unprotected in production for days before that. The gate is now a PR plus two machines, and Jacky is a reviewer in it, not the deploy mechanism. Do not re-add her out of habit:
+
+1. Write the exact definition under **Pending** below.
+2. Mirror it into `emulator/firestore.rules` and add behavioural cases to `tests/ownership.rules.test.ts` — negative-control first: the new cases must fail against a ruleset without the block. A check that greps for a field name is not a test; one shipped here and passed for the whole life of the bug.
+3. Open a PR. CI runs the emulator ownership suite (`rules-suite` job). **Jacky reviews the PR. She does not run the deploy.**
+4. The block is applied to `novara/firebase/firestore.rules` and deployed from that repo's up-to-date `main` (never from a branch — a `--only firestore` deploy from a stale ref silently drops blocks). Target end-state: the deploy runs from `novara` CI on merge to `main`; until a deploy credential exists in that CI, whoever is at the keyboard runs the deploy command from `main`, as an executor, not an approver.
+5. **Applied means read back, not deployed.** An entry moves from Pending to Applied only when the live ruleset has been read back from the Firebase Rules API and matches — `novara/tools/rules_check.py` does exactly this (live release vs `main` vs the Applied blocks in this file) and runs in `novara` CI on weekdays, so drift is caught even with no commits.
+
+Queries that need a composite index fail at runtime until the index is applied and built, so entries land here as soon as the query is written.
 
 Reminders for whoever writes entries here:
 
