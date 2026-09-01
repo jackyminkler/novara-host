@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { Download, Search, Upload } from 'lucide-react'
 import { Page, PageHeader } from './Page'
 import { useAsync } from '../useApi'
 import { Input, Select } from '../../ui/form'
 import { Avatar, Card, Chip, EmptyState, ErrorState, Loading, OutlineButton, Sub, SubTitle, cx } from '../../ui/primitives'
+import ImportGuestsDialog from '../people/ImportGuestsDialog'
 import { initials } from '../../data/profiles'
 import { SEGMENTS, referralCounts } from '../../data/segments'
+import { peopleCsv, peopleCsvName } from '../../data/people/export'
 import { track } from '../../lib/analytics'
-import type { Person } from '../../data/types'
+import type { EventDoc, Person } from '../../data/types'
 
 // The whole list loads in one read and every filter runs here. At this size
 // that is faster than a round trip per filter, needs no composite index, and
@@ -39,8 +41,27 @@ function allTags(people: Person[]): string[] {
   return [...tags].sort()
 }
 
+/**
+ * Hand the browser a file. Entirely client side: the list is already loaded,
+ * so an export is a string and a click, with nothing to ask a backend for.
+ */
+function downloadCsv(name: string, contents: string): void {
+  const url = URL.createObjectURL(new Blob([contents], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function PeoplePage() {
-  const { data, error, loading, reload } = useAsync((api) => api.listPeople(), [])
+  const { data, error, loading, reload } = useAsync(
+    async (api) => {
+      const [people, events] = await Promise.all([api.listPeople(), api.listEvents()])
+      return { people, events }
+    },
+    [],
+  )
   const [segmentId, setSegmentId] = useState<string>('')
   const [search, setSearch] = useState('')
   const [tier, setTier] = useState('')
@@ -48,11 +69,13 @@ export default function PeoplePage() {
   const [tag, setTag] = useState('')
   const [sort, setSort] = useState<'lastSeen' | 'events'>('lastSeen')
   const [shown, setShown] = useState(PAGE_SIZE)
+  const [importing, setImporting] = useState(false)
 
-  const people = useMemo(() => data ?? [], [data])
+  const people = useMemo(() => data?.people ?? [], [data])
+  const events: EventDoc[] = useMemo(() => data?.events ?? [], [data])
 
   useEffect(() => {
-    if (data) track('hp_people_list_viewed', { total: data.length })
+    if (data) track('hp_people_list_viewed', { total: data.people.length })
   }, [data])
 
   // Any filter change starts the list over, or page two of the old filter
@@ -87,6 +110,11 @@ export default function PeoplePage() {
 
   const activeSegment = SEGMENTS.find((s) => s.id === segmentId)
 
+  const exportFiltered = () => {
+    downloadCsv(peopleCsvName(), peopleCsv(filtered))
+    track('hp_people_exported', { count: filtered.length })
+  }
+
   return (
     <Page>
       <PageHeader
@@ -96,19 +124,47 @@ export default function PeoplePage() {
             ? `${filtered.length.toLocaleString()} of ${people.length.toLocaleString()} who have been to or been asked to something`
             : undefined
         }
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {filtered.length > 0 && (
+              <OutlineButton onClick={exportFiltered} title="Downloads the list as it is filtered">
+                <Download size={13} />
+                Export CSV
+              </OutlineButton>
+            )}
+            <OutlineButton onClick={() => setImporting(true)}>
+              <Upload size={13} />
+              Import guests
+            </OutlineButton>
+          </div>
+        }
       />
 
       {loading && <Loading label="Loading people" />}
       {error && <ErrorState message={`People didn't load (${error}).`} onRetry={reload} />}
 
-      {data && data.length === 0 && (
+      {data && people.length === 0 && (
         <EmptyState
           title="No one here yet"
           body="Guest lists arrive by importing an event export. Until then this stays empty, and everything else in the app still works."
+          action={
+            <OutlineButton onClick={() => setImporting(true)}>
+              <Upload size={13} />
+              Import guests
+            </OutlineButton>
+          }
         />
       )}
 
-      {data && data.length > 0 && (
+      {importing && (
+        <ImportGuestsDialog
+          events={events}
+          onClose={() => setImporting(false)}
+          onImported={reload}
+        />
+      )}
+
+      {data && people.length > 0 && (
         <>
           <div className="mb-3 flex flex-wrap gap-[6px]">
             <button type="button" onClick={() => setSegmentId('')}>

@@ -8,6 +8,8 @@ import {
   type BookingView,
   type BookingWindow,
   type GuestAction,
+  type GuestDeliverable,
+  type GuestDeliverableCounts,
   type GuestScope,
   type HuddleView,
   type GuestPayload,
@@ -28,18 +30,25 @@ const db = getFirestore();
 
 const TOKENS = "hp_guestTokens";
 const EVENTS = "hp_events";
+const PROFILES = "hp_profiles";
+const CONTACTS = "hp_contacts";
 const AVAILABILITY_SETTINGS = "hp_availabilitySettings";
 const FRIEND_LINKS = "hp_friendLinks";
 const BOOKINGS = "hp_bookings";
 const HUDDLES = "hp_huddles";
 
 interface TokenDoc {
-  /** Null for booking tokens, which belong to a host rather than an event. */
+  /**
+   * Empty string on a card token, null on booking and huddle tokens; those
+   * three scopes are the ones with no event behind them, and every event
+   * scope narrows this with a guard before building an event reference.
+   */
   eventId: string | null;
-  scope: "party" | "crew" | "recap" | "booking" | "huddle";
+  scope: "party" | "crew" | "recap" | "card" | "booking" | "huddle";
   subjectId: string;
-  revoked: boolean;
+  /** The host who owns everything this token can reach. */
   ownerUid: string;
+  revoked: boolean;
   /** Null means never. A lapsed link is refused exactly like a revoked one. */
   expiresAt: string | null;
 }
@@ -55,6 +64,10 @@ async function loadToken(raw: unknown): Promise<{ id: string; data: TokenDoc }> 
   if (!snap.exists) throw new InvalidToken();
   const data = snap.data() as TokenDoc;
   if (data.revoked) throw new InvalidToken();
+  // Every other scope is addressed through its event. A card token is not, so
+  // the owner is the only thing scoping its reads and its one write, and a
+  // token without one has nothing to scope them by.
+  if (data.scope === "card" && typeof data.ownerUid !== "string") throw new InvalidToken();
   // Expiry and revocation are the same answer to the caller on purpose: a link
   // that says "this expired" tells a stranger the link was once real.
   if (data.expiresAt && Date.parse(data.expiresAt) < Date.now()) throw new InvalidToken();
@@ -74,8 +87,119 @@ async function readSub(eventId: string, name: string) {
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
 }
 
+const emptyCounts = (): GuestDeliverableCounts => ({
+  party: { done: 0, total: 0 },
+  host: { done: 0, total: 0 },
+});
+
+function countDeliverables(items: GuestDeliverable[]): GuestDeliverableCounts {
+  const counts = emptyCounts();
+  for (const item of items) {
+    const side = item.direction === "host" ? counts.host : counts.party;
+    side.total += 1;
+    if (item.done) side.done += 1;
+  }
+  return counts;
+}
+
+/**
+ * The host's soonest event that has not happened yet, by confirmed date.
+ *
+ * Equality on `ownerUid` and everything else in memory, like every other query
+ * in this product: a date filter would want a composite index, and a host has
+ * tens of events rather than thousands.
+ */
+async function soonestUpcoming(
+  ownerUid: string
+): Promise<{ id: string; title: string } | null> {
+  const snap = await db.collection(EVENTS).where("ownerUid", "==", ownerUid).get();
+  const today = new Date();
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+  return (
+    snap.docs
+      .map((d) => {
+        const event = d.data() as Record<string, any>;
+        const option = (event.dateOptions ?? []).find(
+          (o: any) => o.id === event.confirmedDateOptionId
+        );
+        return option?.startsAt
+          ? { id: d.id, title: (event.title as string) ?? "", startsAt: option.startsAt as string }
+          : null;
+      })
+      .filter((row): row is { id: string; title: string; startsAt: string } => row !== null)
+      .filter((row) => new Date(row.startsAt).getTime() >= from)
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+      .map((row) => ({ id: row.id, title: row.title }))[0] ?? null
+  );
+}
+
+/**
+ * A card view carries the card and nothing else. It is built from scratch
+ * rather than from an event, because there is no event: the shell below is
+ * empty on purpose, and no host document other than the card is read.
+ */
+async function buildCardView(token: { id: string; data: TokenDoc }): Promise<GuestView> {
+  const { subjectId, ownerUid } = token.data;
+  // The card's document id is the host's uid, and the token's subject is that
+  // same uid. Reading anyone else's card would need both to be wrong.
+  if (subjectId !== ownerUid) throw new InvalidToken();
+
+  const snap = await db.collection(PROFILES).doc(subjectId).get();
+  if (!snap.exists) throw new InvalidToken();
+  const card = snap.data() as Record<string, any>;
+
+  const next = await soonestUpcoming(ownerUid);
+  const displayName = (card.displayName as string) || "your host";
+  const methods = (card.methods ?? {}) as Record<string, string>;
+
+  return {
+    scope: "card",
+    event: {
+      title: "",
+      description: "",
+      hostName: displayName,
+      location: { name: "", meetPoint: "", finishPoint: "", notes: "" },
+      confirmedStartsAt: null,
+    },
+    subject: {
+      name: displayName,
+      roleLabel: "",
+      status: "confirmed",
+      terms: { gives: "", gets: "" },
+      goal: "",
+      cta: "",
+      constraintNote: "",
+    },
+    dateOptions: [],
+    tasks: [],
+    deliverables: [],
+    deliverableCounts: emptyCounts(),
+    runOfShow: [],
+    links: [],
+    recap: null,
+    card: {
+      displayName,
+      headline: (card.headline as string) ?? "",
+      // Only the five known keys, and only the ones with a value, so a stray
+      // field on the document cannot ride out to a stranger's phone.
+      methods: {
+        ...(methods.instagram && { instagram: methods.instagram }),
+        ...(methods.linkedin && { linkedin: methods.linkedin }),
+        ...(methods.phone && { phone: methods.phone }),
+        ...(methods.email && { email: methods.email }),
+        ...(methods.other && { other: methods.other }),
+      },
+      eventContext: next?.title ?? null,
+    },
+  };
+}
+
 async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestView> {
   const { eventId, scope, subjectId } = token.data;
+  // A card token carries an empty eventId on purpose, so it must dispatch
+  // before the eventId guard below or every card view would refuse.
+  if (scope === "card") return buildCardView(token);
   // Booking tokens carry no event and are served by buildBookingView. Reaching
   // here with one means the caller routed wrong, so refuse rather than guess.
   if (!eventId || scope === "booking" || scope === "huddle") throw new InvalidToken();
@@ -126,6 +250,20 @@ async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestVi
     return other ? orgName(other.orgId) : "Partner";
   };
 
+  // Both directions, so an arrangement where one side quietly does everything
+  // is visible to both of them rather than remembered differently by each.
+  // Party links only: a recap is a read-only look back and never a checklist.
+  const deliverables: GuestDeliverable[] =
+    scope === "party" && party
+      ? ((party.deliverables ?? []) as any[]).map((d) => ({
+          id: d.id as string,
+          direction: d.direction === "host" ? ("host" as const) : ("party" as const),
+          title: (d.title as string) ?? "",
+          due: (d.due as string) ?? null,
+          done: d.done === true,
+        }))
+      : [];
+
   const schedule: GuestRunItem[] = runOfShow
     .map((item: any) => ({
       time: item.time as string,
@@ -175,12 +313,15 @@ async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestVi
         status: t.status,
         note: t.note ?? "",
       })),
+    deliverables,
+    deliverableCounts: countDeliverables(deliverables),
     runOfShow: schedule,
     // Draft links stay host-side. A partner only ever sees what is final.
     links: (event.links ?? [])
       .filter((l: any) => l.status === "final")
       .map((l: any) => ({ label: l.label, url: l.url })),
     recap: null,
+    card: null,
   };
 
   if (scope === "recap" && party) {
@@ -202,6 +343,52 @@ async function buildView(token: { id: string; data: TokenDoc }): Promise<GuestVi
   }
 
   return view;
+}
+
+/**
+ * Two days out, matching the default the host's own quick add uses. Computed
+ * in the function's zone, which is UTC, so a capture left late in a Pacific
+ * evening is due on what the host would call the third day. A day either way
+ * on a reminder is not worth carrying a timezone through a token.
+ */
+function dueInTwoDays(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 2);
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+const trimmed = (value: unknown, max: number): string =>
+  typeof value === "string" ? value.trim().slice(0, max) : "";
+
+/**
+ * What a stranger may write through a card link, which is one capture with a
+ * name on it. Everything is length capped and nothing else on the payload is
+ * read: there is no rate limiting in M0 (PRD 3.2, accepted risk), so the size
+ * of a single write is the only thing bounded here.
+ */
+function readContactPayload(
+  payload: Record<string, unknown>
+): { name: string; handles: Record<string, string>; note: string } | null {
+  const name = trimmed(payload.name, 120);
+  if (!name) return null;
+
+  const instagram = trimmed(payload.instagram, 120);
+  const linkedin = trimmed(payload.linkedin, 300);
+  const phone = trimmed(payload.phone, 40);
+  const email = trimmed(payload.email, 200);
+
+  return {
+    name,
+    handles: {
+      ...(instagram && { instagram }),
+      ...(linkedin && { linkedin }),
+      ...(phone && { phone }),
+      ...(email && { email }),
+    },
+    note: trimmed(payload.note, 1000),
+  };
 }
 
 function touch(tokenId: string): Promise<unknown> {
@@ -489,7 +676,7 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
       return;
     }
 
-    const { eventId, scope, subjectId } = token.data;
+    const { eventId, scope, subjectId, ownerUid } = token.data;
 
     // Booking links share the endpoint and nothing else: no event, no party,
     // and none of the four event actions.
@@ -530,14 +717,67 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
       res.status(403).json({ error: "not_permitted" });
       return;
     }
-
-    if (!eventId) throw new InvalidToken();
-    const eventRef = db.collection(EVENTS).doc(eventId);
     const now = new Date().toISOString();
 
-    // Crew links carry tasks and the schedule, no terms and no dates, so the
-    // party-only actions are refused rather than silently ignored.
-    const partyOnly: GuestAction[] = ["respond_dates", "confirm_role", "add_note"];
+    // A card link has no event behind it, so it takes exactly one action and
+    // every event-scoped write below would have nothing to write to. Handled
+    // here, before an event reference is built from an empty id.
+    if (scope === "card") {
+      if (action !== "leave_contact") {
+        res.status(403).json({ error: "not_permitted" });
+        return;
+      }
+      const details = readContactPayload(payload);
+      if (!details) {
+        res.status(400).json({ error: "bad_payload" });
+        return;
+      }
+      // Attributed to the host's soonest event, which is where the card is
+      // being handed out. Null when nothing is confirmed, and the capture
+      // still stands on its own.
+      const next = await soonestUpcoming(ownerUid);
+      await db.collection(CONTACTS).add({
+        ownerUid,
+        name: details.name,
+        handles: details.handles,
+        eventId: next?.id ?? null,
+        note: details.note,
+        // Written out rather than left off: the Admin SDK bypasses the
+        // client normalizers, so a field missing here is missing forever.
+        quote: "",
+        voiceNote: null,
+        followUp: { due: dueInTwoDays(), done: false },
+        personId: null,
+        capturedAt: now,
+        capturedBy: "card",
+      });
+
+      const cardView = await buildView(token);
+      await touch(token.id);
+      res.set("Cache-Control", "no-store");
+      res.status(200).json(cardView);
+      return;
+    }
+
+    // The mirror of the guard above: an event link never leaves a contact.
+    if (action === "leave_contact") {
+      res.status(403).json({ error: "not_permitted" });
+      return;
+    }
+
+    // Only party and crew scopes remain, and both are addressed through an
+    // event. Booking, huddle and card all returned above.
+    if (!eventId) throw new InvalidToken();
+    const eventRef = db.collection(EVENTS).doc(eventId);
+
+    // Crew links carry tasks and the schedule, no terms, dates or agreements,
+    // so the party-only actions are refused rather than silently ignored.
+    const partyOnly: GuestAction[] = [
+      "respond_dates",
+      "confirm_role",
+      "add_note",
+      "update_deliverable",
+    ];
     if (scope === "crew" && partyOnly.includes(action)) {
       res.status(403).json({ error: "not_permitted" });
       return;
@@ -602,6 +842,31 @@ export const hpGuestSubmit = onRequest({ invoker: "public" }, async (req, res) =
         .collection("parties")
         .doc(subjectId)
         .update({ constraintNote: payload.note.slice(0, 1000) });
+    }
+
+    if (action === "update_deliverable") {
+      const deliverableId = payload.deliverableId;
+      if (typeof deliverableId !== "string" || typeof payload.done !== "boolean") {
+        res.status(400).json({ error: "bad_payload" });
+        return;
+      }
+      const partyRef = eventRef.collection("parties").doc(subjectId);
+      const partySnap = await partyRef.get();
+      const current = (partySnap.data()?.deliverables ?? []) as any[];
+      // Their own list, and only the half they owe. What the host brings is
+      // the host's to tick off, and is read-only on the guest page.
+      const target = current.find((d) => d.id === deliverableId);
+      if (!target || target.direction === "host") {
+        res.status(403).json({ error: "not_permitted" });
+        return;
+      }
+      // The whole array goes back, never a dotted path into an index: those
+      // depend on the order the host last left the list in.
+      await partyRef.update({
+        deliverables: current.map((d) =>
+          d.id === deliverableId ? { ...d, done: payload.done } : d
+        ),
+      });
     }
 
     const view = await buildView(token);

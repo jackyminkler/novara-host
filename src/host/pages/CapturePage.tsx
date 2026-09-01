@@ -1,21 +1,30 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { AtSign, Check, Link2, Mail, Phone, Plus } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  AtSign, Check, Link2, Mail, Mic, Phone, Plus, QrCode, Square, Trash2, UserPlus,
+} from 'lucide-react'
 import { useAsync, useMutation } from '../useApi'
 import { useHost } from '../AuthProvider'
 import {
-  Avatar, Button, Card, Chip, Eyebrow, GhostButton, Loading, QuietButton, SubTitle, cx,
+  Avatar, Button, Card, Chip, Eyebrow, GhostButton, Loading, OutlineButton, QuietButton, Sub,
+  SubTitle, cx,
 } from '../../ui/primitives'
-import { Field, Input, Textarea } from '../../ui/form'
+import { Field, InlineText, Input, Textarea } from '../../ui/form'
 import { Modal } from '../../ui/Modal'
-import type { CapturedContact, EventDoc } from '../../data/types'
-import { addDays, formatDue, toDateKey } from '../../lib/dates'
+import type { CapturedContact, EventDoc, Person } from '../../data/types'
+import { addDays, formatDaySpoken, formatDue, startOfDay, toDateKey } from '../../lib/dates'
 import { initials } from '../../data/profiles'
 import { track } from '../../lib/analytics'
 
-// Split template: follow-ups queue on the left, the person on the right,
-// worked like an inbox. Every capture at an event also counts as verified
-// presence on that event's recap (F11).
+// Split template: captures queue on the left, the person on the right, worked
+// like an inbox. Every capture at an event also counts as verified presence on
+// that event's recap (F11).
+//
+// M1 adds the follow-up hub above the detail. Captures and people are two
+// different things with the same debt attached: a handshake you have not
+// answered yet, and someone on the guest list you meant to write to. Splitting
+// that across two screens is how one half quietly stops being read, so both
+// arrive in one list with the default action already chosen.
 
 function handleLink(kind: keyof CapturedContact['handles'], value: string): string {
   if (kind === 'instagram') return `https://instagram.com/${value.replace(/^@/, '')}`
@@ -36,8 +45,12 @@ export default function CapturePage() {
   const [adding, setAdding] = useState(false)
 
   const { data, loading, reload } = useAsync(async (api) => {
-    const [contacts, events] = await Promise.all([api.listContacts(), api.listEvents()])
-    return { contacts, events }
+    const [contacts, events, people] = await Promise.all([
+      api.listContacts(),
+      api.listEvents(),
+      api.listPeople(),
+    ])
+    return { contacts, events, people }
   }, [])
 
   const contacts = data?.contacts ?? []
@@ -55,7 +68,7 @@ export default function CapturePage() {
     <div className="flex min-h-screen flex-col lg:flex-row">
       <aside className="hairline w-full shrink-0 border-0 border-b border-line bg-well px-[10px] py-[14px] lg:w-52 lg:border-b-0 lg:border-r">
         <div className="mb-2 flex items-center justify-between px-1">
-          <Eyebrow>Follow ups</Eyebrow>
+          <Eyebrow>Captures</Eyebrow>
           <button
             onClick={() => setAdding(true)}
             aria-label="Add a capture"
@@ -98,6 +111,23 @@ export default function CapturePage() {
       </aside>
 
       <main className="min-w-0 flex-1 px-4 py-4 sm:px-[18px]">
+        <div className="mb-3 flex items-center justify-end">
+          <Link to="/app/card">
+            <QuietButton>
+              <QrCode size={13} />
+              Your card
+            </QuietButton>
+          </Link>
+        </div>
+
+        <FollowUpHub
+          contacts={contacts}
+          people={data?.people ?? []}
+          events={data?.events ?? []}
+          onChanged={reload}
+          onOpenCapture={setSelectedId}
+        />
+
         {selected ? (
           <ContactDetail
             key={selected.id}
@@ -137,6 +167,242 @@ export default function CapturePage() {
   )
 }
 
+// ------------------------------------------------------------- follow-up hub
+
+interface FollowUpRow {
+  key: string
+  id: string
+  /** Where the debt came from. Captures and people are stored separately. */
+  source: 'capture' | 'person'
+  name: string
+  due: string
+  done: boolean
+  /** Marked here, played on the detail. A list is not a playlist. */
+  hasVoice: boolean
+}
+
+const SOURCE_CAPTION: Record<FollowUpRow['source'], string> = {
+  capture: 'from capture',
+  person: 'from your people',
+}
+
+/** The next event with a confirmed date that has not happened yet. */
+function nextConfirmed(
+  events: EventDoc[],
+  today = new Date(),
+): { event: EventDoc; startsAt: string } | null {
+  const from = startOfDay(today).getTime()
+  return (
+    events
+      .map((event) => {
+        const option = event.dateOptions.find((o) => o.id === event.confirmedDateOptionId)
+        return option ? { event, startsAt: option.startsAt } : null
+      })
+      .filter((row): row is { event: EventDoc; startsAt: string } => row !== null)
+      .filter((row) => new Date(row.startsAt).getTime() >= from)
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null
+  )
+}
+
+/**
+ * The line that goes in the message. Short enough to send as it is, with the
+ * official listing on the end when one is recorded, because the invite has to
+ * point at the page that owns the guest list rather than a second one.
+ */
+export function inviteLine(next: { event: EventDoc; startsAt: string }): string {
+  const place = next.event.location.name.trim()
+  const when = formatDaySpoken(next.startsAt)
+  const opening = place
+    ? `${next.event.title} at ${place}, ${when}.`
+    : `${next.event.title}, ${when}.`
+  const url = next.event.governance.listingUrl.trim()
+  return url ? `${opening} Details: ${url}` : opening
+}
+
+function FollowUpHub({
+  contacts,
+  people,
+  events,
+  onChanged,
+  onOpenCapture,
+}: {
+  contacts: CapturedContact[]
+  people: Person[]
+  events: EventDoc[]
+  onChanged: () => void
+  onOpenCapture: (id: string) => void
+}) {
+  const { mutate, busy } = useMutation(onChanged)
+  const [copied, setCopied] = useState<string | null>(null)
+  // Where the line goes when the clipboard refuses, which some browsers do
+  // without warning. Losing it silently would look like a broken button.
+  const [manual, setManual] = useState<string | null>(null)
+
+  const next = useMemo(() => nextConfirmed(events), [events])
+
+  const rows = useMemo(() => {
+    const all: FollowUpRow[] = [
+      ...contacts
+        .filter((c) => c.followUp)
+        .map((c) => ({
+          key: `capture-${c.id}`,
+          id: c.id,
+          source: 'capture' as const,
+          name: c.name,
+          due: c.followUp!.due,
+          done: c.followUp!.done,
+          hasVoice: Boolean(c.voiceNote),
+        })),
+      ...people
+        .filter((p) => p.followUp)
+        .map((p) => ({
+          key: `person-${p.id}`,
+          id: p.id,
+          source: 'person' as const,
+          name: p.fullName || p.email,
+          due: p.followUp!.due,
+          done: p.followUp!.done,
+          hasVoice: false,
+        })),
+    ]
+    // Open first, soonest due at the top. Done ones stay, newest first, so a
+    // follow-up marked by mistake can be reopened where it was.
+    return all.sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1
+      return a.done ? b.due.localeCompare(a.due) : a.due.localeCompare(b.due)
+    })
+  }, [contacts, people])
+
+  if (rows.length === 0) return null
+
+  const toggle = (row: FollowUpRow) =>
+    void mutate(async (api) => {
+      const followUp = { due: row.due, done: !row.done }
+      if (row.source === 'capture') await api.updateContact(row.id, { followUp })
+      else await api.updatePerson(row.id, { followUp })
+      if (!row.done) track('hp_followup_done', { source: row.source })
+    })
+
+  const copyInvite = (row: FollowUpRow) => {
+    if (!next) return
+    const line = inviteLine(next)
+    void navigator.clipboard
+      .writeText(line)
+      .then(() => {
+        setManual(null)
+        setCopied(row.key)
+        track('hp_followup_invite_copied', { eventId: next.event.id, source: row.source })
+        setTimeout(() => setCopied((current) => (current === row.key ? null : current)), 4000)
+      })
+      .catch(() => setManual(line))
+  }
+
+  const openCount = rows.filter((r) => !r.done).length
+
+  return (
+    <Card className="mb-3">
+      <div className="mb-[5px] flex flex-wrap items-center justify-between gap-2">
+        <Eyebrow>Follow ups</Eyebrow>
+        <span className="text-[11.5px] text-mut">
+          {openCount === 0
+            ? 'All caught up.'
+            : openCount === 1
+              ? '1 waiting on you'
+              : `${openCount} waiting on you`}
+        </span>
+      </div>
+
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-hair py-[7px] first:border-t-0 first:pt-1"
+        >
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => toggle(row)}
+            aria-label={
+              row.done ? `Reopen the follow up with ${row.name}` : `Mark ${row.name} followed up`
+            }
+            className="shrink-0"
+          >
+            <span
+              className={cx(
+                'flex size-[17px] items-center justify-center rounded-full border transition',
+                row.done
+                  ? 'border-transparent bg-vio text-white'
+                  : 'border-line text-transparent hover:border-viodash',
+              )}
+            >
+              <Check size={10} />
+            </span>
+          </button>
+
+          <span className="min-w-0 flex-1">
+            {row.source === 'person' ? (
+              <Link
+                to={`/app/people/${row.id}`}
+                className={cx('block truncate text-[12.5px] font-medium', row.done ? 'text-mut' : 'text-ink')}
+              >
+                {row.name}
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenCapture(row.id)}
+                className={cx('block max-w-full truncate text-left text-[12.5px] font-medium', row.done ? 'text-mut' : 'text-ink')}
+              >
+                {row.name}
+              </button>
+            )}
+            <span className="flex items-center gap-[5px] text-[11px] text-mut">
+              {SOURCE_CAPTION[row.source]}
+              {row.hasVoice && (
+                <Mic size={11} className="text-vio" aria-label="Has a voice note" />
+              )}
+            </span>
+          </span>
+
+          {!row.done && <Chip tone="vio">{formatDue(row.due)}</Chip>}
+
+          {copied === row.key ? (
+            <span className="text-[11.5px] text-vio">Copied. Send it in your usual chat.</span>
+          ) : (
+            <QuietButton
+              onClick={() => copyInvite(row)}
+              disabled={!next}
+              title={next ? undefined : 'Confirm a date on an event first.'}
+            >
+              Invite to next event
+            </QuietButton>
+          )}
+        </div>
+      ))}
+
+      {!next && (
+        <Sub className="mt-1">
+          Confirm a date on an event first, and the invite line writes itself.
+        </Sub>
+      )}
+
+      {manual && (
+        <div className="mt-2">
+          <Sub className="mb-1">Your browser would not let us copy it. Take it from here.</Sub>
+          <Input
+            readOnly
+            value={manual}
+            aria-label="Invite line"
+            onFocus={(e) => e.currentTarget.select()}
+            className="!py-1 !text-xs"
+          />
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ------------------------------------------------------------ capture detail
+
 function ContactRow({
   contact,
   active,
@@ -175,6 +441,8 @@ function ContactDetail({
   events: EventDoc[]
   onChanged: () => void
 }) {
+  const host = useHost()
+  const navigate = useNavigate()
   const { mutate, busy } = useMutation(onChanged)
   const event = events.find((e) => e.id === contact.eventId)
   const openFollowUp = contact.followUp && !contact.followUp.done
@@ -193,6 +461,16 @@ function ContactDetail({
         followUp: { due: toDateKey(addDays(new Date(), 3)), done: false },
       }),
     )
+
+  // Offered once. A capture with no email has no dedupe key, so a second
+  // promotion would build a second person instead of merging into the first,
+  // which is why the link back is what decides whether to show this at all.
+  const promote = () =>
+    void mutate(async (api) => {
+      const personId = await api.promoteContactToPerson(contact.id, host.uid)
+      track('hp_person_promoted', { hadEmail: Boolean(contact.handles.email) })
+      navigate(`/app/people/${personId}`)
+    })
 
   const handles = Object.entries(contact.handles).filter(([, value]) => Boolean(value)) as [
     keyof CapturedContact['handles'],
@@ -243,6 +521,20 @@ function ContactDetail({
         </p>
       </Card>
 
+      <Card className="mb-3">
+        <Eyebrow className="mb-[3px]">In their words</Eyebrow>
+        <InlineText
+          value={contact.quote ?? ''}
+          ariaLabel="Something they said"
+          placeholder="Something they actually said, worth keeping"
+          multiline
+          onCommit={(next) => void mutate((api) => api.updateContact(contact.id, { quote: next }))}
+          className="!text-[13px] !leading-[1.55]"
+        />
+      </Card>
+
+      <VoiceNote contact={contact} onChanged={onChanged} />
+
       <div className="flex flex-wrap items-center gap-3">
         {openFollowUp && (
           <>
@@ -255,6 +547,16 @@ function ContactDetail({
             </GhostButton>
           </>
         )}
+        {contact.personId ? (
+          <Link to={`/app/people/${contact.personId}`}>
+            <QuietButton>View in people</QuietButton>
+          </Link>
+        ) : (
+          <QuietButton onClick={promote} disabled={busy}>
+            <UserPlus size={13} />
+            Add to people
+          </QuietButton>
+        )}
         {event && event.status !== 'wrapped' && (
           <Link to={`/app/events/${event.id}`}>
             <QuietButton>Open {event.title}</QuietButton>
@@ -262,6 +564,159 @@ function ContactDetail({
         )}
       </div>
     </>
+  )
+}
+
+// ---------------------------------------------------------------- voice note
+
+/**
+ * Two minutes, which is long enough to say who someone was and what they
+ * wanted and short enough that nobody has to sit through it later.
+ */
+const MAX_SECONDS = 120
+
+const clock = (seconds: number): string =>
+  `${Math.floor(seconds / 60)}:${`${seconds % 60}`.padStart(2, '0')}`
+
+/**
+ * M1 voice notes. Recorded here, uploaded through the seam, played back with
+ * the browser's own player: an audio element does scrubbing, speed and volume
+ * better than anything worth writing for a thirty second note.
+ *
+ * The recording never touches component state. A MediaRecorder and its stream
+ * outlive a render, so both live in refs and are stopped on unmount, or a
+ * capture switched mid-sentence leaves the microphone light on.
+ */
+function VoiceNote({
+  contact,
+  onChanged,
+}: {
+  contact: CapturedContact
+  onChanged: () => void
+}) {
+  const { mutate, busy, error } = useMutation(onChanged)
+  const [recording, setRecording] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [blocked, setBlocked] = useState<string | null>(null)
+  const recorder = useRef<MediaRecorder | null>(null)
+  const ticker = useRef<number | null>(null)
+
+  const clearTicker = () => {
+    if (ticker.current !== null) window.clearInterval(ticker.current)
+    ticker.current = null
+  }
+
+  const stop = useCallback(() => {
+    if (recorder.current?.state === 'recording') recorder.current.stop()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearTicker()
+      if (recorder.current?.state === 'recording') recorder.current.stop()
+    }
+  }, [])
+
+  const start = async () => {
+    setBlocked(null)
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setBlocked('This browser cannot record audio. Try Chrome or Safari.')
+      return
+    }
+
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setBlocked('Microphone access is blocked. Allow it in your browser settings to record.')
+      return
+    }
+
+    // Opus in webm where it exists, the browser's own default where it does
+    // not, which is what Safari needs.
+    const preferred = 'audio/webm;codecs=opus'
+    const supported = MediaRecorder.isTypeSupported?.(preferred) ?? false
+    const active = new MediaRecorder(stream, supported ? { mimeType: preferred } : undefined)
+    const chunks: BlobPart[] = []
+    const startedAt = Date.now()
+
+    active.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data)
+    }
+
+    active.onstop = () => {
+      stream.getTracks().forEach((track) => track.stop())
+      clearTicker()
+      setRecording(false)
+      setElapsed(0)
+      const seconds = Math.min(MAX_SECONDS, Math.max(1, Math.round((Date.now() - startedAt) / 1000)))
+      const blob = new Blob(chunks, { type: active.mimeType || 'audio/webm' })
+      void mutate(async (api) => {
+        await api.saveVoiceNote(contact.id, blob, seconds)
+        track('hp_voice_note_recorded', { durationSec: seconds })
+      })
+    }
+
+    recorder.current = active
+    active.start()
+    setRecording(true)
+    setElapsed(0)
+    ticker.current = window.setInterval(() => {
+      const seconds = Math.round((Date.now() - startedAt) / 1000)
+      setElapsed(seconds)
+      if (seconds >= MAX_SECONDS) stop()
+    }, 250)
+  }
+
+  const remove = () => {
+    if (!window.confirm('Delete this voice note? It cannot be brought back.')) return
+    void mutate((api) => api.deleteVoiceNote(contact.id))
+  }
+
+  const note = contact.voiceNote
+
+  return (
+    <Card className="mb-3">
+      <div className="mb-[6px] flex flex-wrap items-center justify-between gap-2">
+        <Eyebrow>Voice note</Eyebrow>
+        {note && <span className="text-[11px] text-mut">{clock(note.durationSec)}</span>}
+      </div>
+
+      {note ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <audio controls src={note.url} className="h-9 min-w-0 flex-1" />
+          <QuietButton onClick={remove} disabled={busy} aria-label="Delete this voice note">
+            <Trash2 size={13} />
+            Delete
+          </QuietButton>
+        </div>
+      ) : recording ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <OutlineButton onClick={stop}>
+            <Square size={12} />
+            Stop
+          </OutlineButton>
+          <span className="flex items-center gap-[6px] text-[12.5px] text-vio">
+            <span className="size-[7px] animate-pulse rounded-full bg-vio" />
+            Recording {clock(elapsed)}
+          </span>
+          <span className="text-[11.5px] text-mut">Stops on its own at two minutes.</span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <OutlineButton onClick={() => void start()} disabled={busy}>
+            <Mic size={13} />
+            {busy ? 'Saving' : 'Record'}
+          </OutlineButton>
+          <span className="text-[12.5px] text-sec">
+            Say who they were while you still remember. Two minutes at most.
+          </span>
+        </div>
+      )}
+
+      {blocked && <p className="mt-2 text-[12px] text-rosek">{blocked}</p>}
+      {error && <p className="mt-2 text-[12px] text-rosek">{error}</p>}
+    </Card>
   )
 }
 
@@ -303,6 +758,9 @@ function QuickAdd({
           },
           eventId: eventId || null,
           note: note.trim(),
+          // M1 fields, empty until the quote field and the recorder land.
+          quote: '',
+          voiceNote: null,
           followUp: followUp ? { due: toDateKey(addDays(new Date(), 2)), done: false } : null,
         },
         host.uid,

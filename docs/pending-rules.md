@@ -19,10 +19,91 @@ Reminders for whoever writes entries here:
 
 ## Pending
 
-> **Status 2026-08-31: nothing pending.** The four personal-availability blocks
-> (`hp_availabilitySettings`, `hp_friendLinks`, `hp_bookings`, `hp_huddles`) are
-> deployed and read back from the Firebase Rules API; see the first entry under
-> Applied.
+Written 2026-08-26 for the M1 build, phase 1. Three blocks and one note. Two are Firestore and
+go in the consumer repo's `firestore.rules` beside the existing `hp_` section; the third is the
+**first Storage entry this repo has ever raised** and goes in `storage.rules`, which is a
+different file and a different deploy target.
+
+Nothing here needs a composite index. Every new query is equality only on `ownerUid`, `scope`
+and `subjectId`, which Firestore serves from merged single-field indexes, and the matching
+subcollection is read whole and sorted in memory like every other subcollection here.
+
+### `hp_profiles`, the host's share card
+
+The QR share card (PRD section 5, M1). One document per host, and **the document id is the
+host's uid**, which is the point: the card is read with a `get` on a known path rather than a
+query, so opening it costs one read and needs no index. `ownerUid` is still stamped on the
+document and still the condition the rules test, because the id being the uid is a convenience
+and not a guarantee: a document could be written at another host's path, and `hpOwnsNew()` is
+what stops it.
+
+Same owner-scoped shape as every other `hp_` collection. Rehearsed on the emulator:
+`emulator/firestore.rules` carries this block and `hp_profiles` is in the `COLLECTIONS` list
+that `tests/ownership.rules.test.ts` parameterises over, so it inherits the whole set of cases.
+
+```
+// The host's share card, one document per host. The document id is the
+// host's uid, so reading a card is a get rather than a query. ownerUid is
+// still what the rules test: the id matching the uid is a convenience, and
+// hpOwnsNew() is what stops a document being written at another uid's path.
+match /hp_profiles/{uid} {
+  allow read, update, delete: if hpOwns();
+  allow create: if hpOwnsNew();
+}
+```
+
+### `matching`, a subcollection of `hp_events`
+
+One document per matching run (PRD section 5, M1), so a later run never overwrites what the
+last one produced. It hangs off its event and inherits that event's owner through
+`hpOwnsEvent()`, exactly like `parties`, `tasks`, `runOfShow`, `crew` and `log`.
+
+**Explicit path, never a collection-group match.** `matching` is not `hp_`-prefixed, and a
+collection-group rule in the shared ruleset would span the consumer app's subcollections too.
+Goes **inside** the existing `match /hp_events/{eventId} { ... }` block, next to `crew`:
+
+```
+  match /matching/{runId} {
+    allow read, write: if hpOwnsEvent(eventId);
+  }
+```
+
+### `hp_voice`, Storage. First Storage entry, different file
+
+Voice notes on capture (PRD section 5, M1). This is the one CLAUDE.md anticipated with "from
+M1"; nothing in this repo has needed Storage before, so **this block does not go in
+`firestore.rules`**. It goes in the consumer repo's `storage.rules`, under
+`service firebase.storage`, and deploys with `--only storage` rather than `--only firestore`.
+Two files, two deploys, and pasting it into the wrong one fails in a way that reads like a
+syntax error rather than a misplacement.
+
+The path carries the owner's uid as its first segment, so the rule compares against the path
+rather than doing a lookup: no `get()`, no billed read per upload, and no way to write into
+another host's folder. Objects are named `hp_voice/{ownerUid}/{contactId}/{timestamp}.webm`.
+
+```
+match /hp_voice/{ownerUid}/{contactId}/{fileName} {
+  allow read, write: if request.auth != null && request.auth.uid == ownerUid;
+}
+```
+
+**Until this is applied, recording a voice note fails on permissions.** The app expects that
+and says so: `saveVoiceNote` catches the failure and surfaces "Voice notes need the storage
+rules applied first, and the exact block is queued in pending rules." Nothing else in the app
+depends on Storage, so the rest of M1 works without this.
+
+### Note, no rules change: the token scope set gains `card`
+
+`hp_guestTokens` documents now carry a fourth scope, `card`, alongside `party`, `crew` and
+`recap`. **No block changes.** The collection's rules never read `scope`, and the guest
+functions reach these documents with the Admin SDK, which bypasses rules entirely.
+
+Recorded here because one thing about a card token is genuinely different and will look like
+corrupt data to whoever meets it first: **a card token carries `eventId` of `''`**. It is the
+only scope with no event behind it, since the card belongs to the host rather than to any one
+event, and its `subjectId` is the host's own uid. Any future query or cleanup that assumes
+`eventId` names a real event needs to skip these. `deleteEvent` already does, because it
+queries tokens by the event id it is deleting and `''` never matches.
 
 ## Applied
 

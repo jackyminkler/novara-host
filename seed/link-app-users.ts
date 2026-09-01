@@ -17,8 +17,8 @@
  * identity model applied to a bulk backfill.
  */
 import { readFileSync } from 'node:fs'
-import { parseCsvRecords } from './csv.ts'
-import { normalizeEmail } from './import-luma-guests.ts'
+import { parseCsvRecords } from '../src/data/people/csv.ts'
+import { normalizeEmail } from '../src/data/people/merge.ts'
 import { adminDb, announceTarget } from './admin.mjs'
 
 const CONFIRMED_MATCH = 'email'

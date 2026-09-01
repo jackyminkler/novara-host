@@ -72,6 +72,13 @@ service cloud.firestore {
       match /log/{entryId} {
         allow read, write: if hpOwnsEvent(eventId);
       }
+      // M1 matching. One document per run, so a later run never overwrites
+      // what the last one produced. Explicit path like every sibling above:
+      // `matching` is not hp_-prefixed, so a collection-group rule would span
+      // the consumer app's subcollections in the shared ruleset.
+      match /matching/{runId} {
+        allow read, write: if hpOwnsEvent(eventId);
+      }
     }
 
     match /hp_templates/{templateId} {
@@ -110,6 +117,16 @@ service cloud.firestore {
     // console. Owner scoped like the rest, so one tester's notes are not
     // readable by another allowlisted account.
     match /hp_feedback/{entryId} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    // M1. The host's share card, one document per host. The document id is
+    // the host's uid, so reading a card is a get rather than a query. ownerUid
+    // is still what the rules test: the id matching the uid is a convenience,
+    // and hpOwnsNew() is what stops a document being written at another
+    // uid's path.
+    match /hp_profiles/{uid} {
       allow read, update, delete: if hpOwns();
       allow create: if hpOwnsNew();
     }

@@ -1,9 +1,14 @@
 /**
  * RFC 4180 CSV reader.
  *
- * Not optional here: the Aug 22 girls-run export has column *names* containing
- * commas and newlines (a question wraps across two lines inside its quotes), so
+ * Not optional here: a Luma export can have column *names* containing commas
+ * and newlines (a question wrapping across two lines inside its quotes), so
  * splitting on commas corrupts both the header and every row after it.
+ *
+ * Lives under src so the seed importer and the in-app importer parse the same
+ * way. It was `seed/csv.ts` first; two copies of a parser this fussy would
+ * disagree the first time one of them was fixed. Pure, no imports at all, so
+ * the seed scripts can load it directly under Node's type stripping.
  */
 
 /** Parse a whole CSV into rows of raw cells. Handles "" escapes and quoted newlines. */
@@ -61,4 +66,18 @@ export function parseCsvRecords(text: string): { headers: string[]; rows: CsvRow
     })
 
   return { headers, rows }
+}
+
+/**
+ * The other direction, for CRM-2's export. Quotes a cell only when it needs
+ * it, which keeps a hand-read file readable, and doubles any quote inside so
+ * `parseCsv` above reads back exactly what went in.
+ *
+ * Line endings are CRLF because that is what RFC 4180 says and what a
+ * spreadsheet on Windows expects; the parser accepts either.
+ */
+export function toCsv(headers: string[], rows: string[][]): string {
+  const cell = (value: string): string =>
+    /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+  return [headers, ...rows].map((row) => row.map(cell).join(',')).join('\r\n')
 }

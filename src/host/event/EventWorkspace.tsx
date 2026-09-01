@@ -13,6 +13,7 @@ import DatesTab from './DatesTab'
 import PartiesTab from './PartiesTab'
 import TasksTab from './TasksTab'
 import RunOfShowTab from './RunOfShowTab'
+import MatchingTab from './MatchingTab'
 
 // Tabbed workspace template. One bundle load feeds every tab, and every write
 // refetches it, which is the whole data strategy per guardrail 3.
@@ -31,6 +32,7 @@ const TABS = [
   { path: 'parties', label: 'Parties' },
   { path: 'tasks', label: 'Tasks' },
   { path: 'run-of-show', label: 'Run of show' },
+  { path: 'matching', label: 'Matching' },
 ]
 
 export default function EventWorkspace() {
@@ -127,6 +129,7 @@ export default function EventWorkspace() {
           <Route path="parties" element={<PartiesTab />} />
           <Route path="tasks" element={<TasksTab />} />
           <Route path="run-of-show" element={<RunOfShowTab />} />
+          <Route path="matching" element={<MatchingTab />} />
           <Route path="*" element={<Navigate to={base} replace />} />
         </Routes>
       </Page>
