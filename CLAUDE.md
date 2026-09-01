@@ -3,7 +3,15 @@
 Novara host platform: a coordination workspace for community event hosts. The host has an account; co-hosts, sponsors, vendors, and crew participate through optional tokenized guest links with no account. Web only.
 
 Cross-repo engineering conventions — commits, ADRs, invariants, releases — are in
-**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`). Repo gates and the
+**`ENGINEERING.md`** (a mirror; edit the canonical copy in `novara`).
+
+**Product canon and the normative design rules are in `novara-brain`, indexed by
+`docs/PRODUCT_CANON.md`. Read that before building any feature or any UI here.**
+`Novara_Design_Rules_v1.md` names Novara Hosts, guest token pages and share cards explicitly in
+its scope, so it governs this repo too, not only the Flutter app. The rules broken most often: no
+em dashes anywhere, sentence case throughout, nothing above font weight 500, twelve colour tokens
+with no opacity variants, every number carries its unit, every screen defines five states, and no
+score on a person anywhere. Repo gates and the
 rules-ownership boundary are in `CONTRIBUTING.md`.
 
 Build contract: @docs/Novara_Host_Platform_PRD_v1.md
@@ -19,9 +27,9 @@ Strategy context (read on demand, do not import): docs/Novara_Host_Platform_Plan
 ## Hard rules
 
 - Never modify the Novara consumer app repo, its Cloud Functions, or any Firestore collection that does not start with `hp_`. If a change there seems necessary, stop and surface it instead of making it.
-- Guests never authenticate and never touch Firestore directly. All guest reads and writes go through the two HTTP functions (`hpGuestView`, `hpGuestSubmit`) with capability token validation. Tokens carry a scope (`party`, `crew`, `recap`); the view function serves the matching view. Do not add guest-side Firestore access, anonymous auth, partner accounts, or a third endpoint.
+- Guests never authenticate and never touch Firestore directly. All guest reads and writes go through the two HTTP functions (`hpGuestView`, `hpGuestSubmit`) with capability token validation. Tokens carry a scope (`party`, `crew`, `recap`, `card`); the view function serves the matching view and the submit function accepts only the actions that scope allows. `card` is the host's share card and is the only scope with no event behind it: those tokens carry `eventId` of `''`. Do not add guest-side Firestore access, anonymous auth, partner accounts, or a third endpoint.
 - Host access is open Google sign-in: anyone signed in gets their own workspace (2026-08-25, supersedes the `hp_config/allowlist` gate in PRD 0.4). **Isolation is `ownerUid`, not a gate.** Every top-level `hp_` document carries `ownerUid`, every `list*` filters on it, and every `hp_` collection gets an explicit match block with the owner condition; event subcollections inherit via `hpOwnsEvent`. Rules cannot wildcard a collection-name prefix. Never propose a collection-group rule (`match /{path=**}/name/`): those span the consumer app's subcollections too in the shared ruleset.
-- This repo never deploys Firestore rules. The consumer app repo owns `firestore.rules` for the shared project. firebase.json here must contain no `firestore` section, and deploys always use explicit targets (`firebase deploy --only functions:hosts,hosting:novara-host`). When a new or changed `hp_` collection needs rules, a composite index, or (from M1) a Storage rules path, write the exact match block or index definition to `docs/pending-rules.md`, tell Jacky, and stop. She applies it through the consumer repo. Queries needing a composite index fail at runtime until the index is applied and built, so surface index needs as soon as the query is written, not when it breaks.
+- This repo never deploys Firestore rules. The consumer app repo owns `firestore.rules` for the shared project. firebase.json here must contain no `firestore` section, and deploys always use explicit targets (`firebase deploy --only functions:hosts,hosting:novara-host`). When a new or changed `hp_` collection needs rules, a composite index, or (from M1) a Storage rules path: write the exact definition to `docs/pending-rules.md`, mirror it into `emulator/firestore.rules`, add behavioural cases to `tests/ownership.rules.test.ts` (negative-control first: the new cases must fail without the block), and open a PR. CI runs the ownership suite on it. **Jacky reviews the PR; she does not run the deploy, and the gate is no longer "tell Jacky and stop"** (2026-08-31 — that gate is why four live collections sat unprotected, then mis-recorded as Pending, for days). Applied means read back from the Firebase Rules API, checked mechanically by `novara/tools/rules_check.py`. Full flow: the Workflow section of `docs/pending-rules.md`. Surface composite-index needs as soon as the query is written, not when it breaks.
 - **Personal content is data, never code.** Jacky's templates, partners, contacts, and any real names enter Firestore through `seed/` or the UI. The app ships fully generic; mock data uses the wireframes' fictional partners. If content seems to need hardcoding, stop and surface it.
 - PRD milestones order the work, they do not gate it (2026-08-26, supersedes the shrink-to-PRD reflex and PRD 4.6 as a hard boundary). Event Zero stays an idea of validation, not a checkpoint that has to clear before more gets built. A feature may land ahead of its milestone: record the decision in `docs/build-log.md` and say which non-goal it overrides. Still shrink rather than expand within a feature, and still surface anything that would touch the consumer app.
 
@@ -33,14 +41,29 @@ Strategy context (read on demand, do not import): docs/Novara_Host_Platform_Plan
 - Outputs are activities, tasks, and dates, never lists of people.
 - The group scheduling object is `Huddle` / `hp_huddles` in code and "plan" in every user-facing string. Do not rename either side toward the other; see `docs/features/plans.md`.
 
-## Design system A.1 (locked August 19, 2026)
+## Design system
+
+> **Superseded, 2026-08-31.** "Design system A.1", locked August 19 2026, defined its own violet and
+> its own button gradient. It predates the colour correction of 2026-08-27 and was never swept.
+> **Host and consumer are one brand. There is no separate host palette.**
+> `Novara_Design_Rules_v1.md` in `novara-brain` is normative for this repo, and it names Novara
+> Hosts, guest token pages and share cards explicitly in scope.
 
 Tokens live in `src/index.css` as CSS variables and Tailwind theme colors. Never hardcode a hex in a component.
 
-- Field `#F8F7FC`, surface white, border `#E9E7F0`, hairline `#F0EFF5`.
-- Ink `#241F3D`, secondary text `#6B6880`, muted `#8D8A9E`.
-- Violet `#4F3BC9` is reserved for meaning: active nav, chips, avatars, proposed-date marks, focus states. Not decoration.
-- Gradient `#6C4FF0` to `#BB4FD4` at 135 degrees appears **only** on primary action buttons. The consumer app's three-stop violet to coral gradient is retired here.
+**The code has not been migrated yet.** `src/index.css` still carries the A.1 values, so what is in
+the repo today is not what the rules require. Do not treat the current CSS as authority and do not
+copy its violet into anything new. The file-by-file list is at
+`novara-brain/00-now/audits/2026-08-31-brand-palette-delta.md`.
+
+Canonical values, from design rules section 2.1:
+
+- Violet `#6C3CE0`, violet-tint `#F1EDFC`. **Retired: `#4F3BC9`, and the `#6C4FF0` to `#BB4FD4` gradient.**
+- Ink `#1E1B26`, secondary `#5C5766`, muted `#918B9C`. **Retired: `#241F3D`, `#6B6880`, `#8D8A9E`.**
+- Paper `#F9F8FC`, surface white, line `#E8E5EE`, line-2 `#D7D2E0`, neutral fill `#F3F1F7`.
+- Danger `#D64545`, success `#1D9E75`.
+- Violet is reserved for meaning: active nav, chips, avatars, proposed-date marks, focus states. Not decoration.
+- **No gradient on a button.** Gradients carry activity identity and appear in four places only: a plan-card identity block, a plan-detail hero, a moment surface (hero or CTA, not both), and share cards. A primary button is flat violet, radius 8, weight 500.
 - Poppins for display (headings, times, numerals), Instrument Sans for interface text.
 - Icons: Lucide only.
 - Borders are hairlines (0.5px), radii 8 to 13px, shadows barely there.

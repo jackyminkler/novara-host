@@ -3,7 +3,7 @@
  * `--offline` never loads firebase-admin and never needs credentials.
  */
 import { adminDb } from './admin.mjs'
-import type { PersonDoc } from './import-luma-guests.ts'
+import type { PersonDoc } from '../src/data/people/merge.ts'
 
 const COLLECTION = 'hp_people'
 const BATCH_LIMIT = 500

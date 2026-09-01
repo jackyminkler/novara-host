@@ -38,6 +38,21 @@ Fields this feature reads or writes, with a link into `../FIELD_REGISTRY.md`:
 
 ---
 
+## Visual state
+
+**UI surfaces.** One row per visual surface this feature owns. A surface with neither a golden
+nor a dated screenshot is a gap, not an omission.
+
+| Surface | Golden | Screenshot | Last verified |
+| --- | --- | --- | --- |
+| `<screen or widget>` | `test/goldens/goldens/<name>.png` | or `docs/features/_media/<feature>/<surface>-YYYY-MM-DD.png` | YYYY-MM-DD |
+
+**Architecture.** If this feature crosses a collection, a function boundary, a repo seam or the
+matching pipeline, the diagram lives here as a fenced ```mermaid block, not as an image, and it
+is updated in the same commit as the code.
+
+---
+
 ## Change protocol
 
 Before you touch it:

@@ -21,6 +21,7 @@ import {
 import {
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
   query,
@@ -49,7 +50,23 @@ const COLLECTIONS = [
   'hp_guestTokens',
   'hp_people',
   'hp_feedback',
+  'hp_profiles',
+  // Personal availability, deployed 2026-08-29 and verified by Rules API
+  // read-back 2026-08-31. These three carry the standard ownerUid shape.
+  // hp_availabilitySettings does not (it is keyed by uid) and gets its own
+  // describe block below.
+  'hp_friendLinks',
+  'hp_bookings',
+  'hp_huddles',
 ]
+
+/**
+ * Every subcollection of hp_events. These inherit their owner from the parent
+ * event through hpOwnsEvent(), and each one needs its own explicit match
+ * block: a collection-group rule would span the consumer app's subcollections
+ * in the shared ruleset, so the list here is what proves the blocks exist.
+ */
+const SUBCOLLECTIONS = ['parties', 'tasks', 'runOfShow', 'crew', 'log', 'matching']
 
 let testEnv: RulesTestEnvironment
 
@@ -79,7 +96,16 @@ beforeEach(async () => {
     for (const name of COLLECTIONS) {
       await setDoc(doc(db, name, 'owned'), { ownerUid: OWNER, name: 'owned by the first host' })
     }
+    for (const name of SUBCOLLECTIONS) {
+      await setDoc(doc(db, 'hp_events/owned', name, 'row'), { note: 'under the first host event' })
+    }
     await setDoc(doc(db, 'hp_events/owned/tasks/t1'), { title: 'a task on the first host event' })
+    // The uid-keyed singleton: the document id is the owner, so the fixture
+    // lives at the owner's uid rather than at a fixture name.
+    await setDoc(doc(db, 'hp_availabilitySettings', OWNER), {
+      timezone: 'America/Los_Angeles',
+      weekly: { sat: ['07:00-10:00'] },
+    })
   })
 })
 
@@ -98,14 +124,24 @@ describe('the owner', () => {
     expect(snap.size).toBe(1)
   })
 
-  it('reads a subcollection under its own event', async () => {
-    await assertSucceeds(getDoc(doc(asOwner(), 'hp_events/owned/tasks/t1')))
+  it.each(SUBCOLLECTIONS)('reads %s under its own event', async (name) => {
+    await assertSucceeds(getDoc(doc(asOwner(), 'hp_events/owned', name, 'row')))
+  })
+
+  it.each(SUBCOLLECTIONS)('writes %s under its own event', async (name) => {
+    await assertSucceeds(
+      setDoc(doc(asOwner(), 'hp_events/owned', name, 'fresh'), { note: 'mine to write' }),
+    )
   })
 
   it('creates a document it owns', async () => {
     await assertSucceeds(
       setDoc(doc(asOwner(), 'hp_people', 'fresh'), { ownerUid: OWNER, email: 'a@example.com' }),
     )
+  })
+
+  it.each(COLLECTIONS)('updates its own %s document', async (name) => {
+    await assertSucceeds(updateDoc(doc(asOwner(), name, 'owned'), { name: 'renamed by the owner' }))
   })
 })
 
@@ -130,8 +166,16 @@ describe('a second allowlisted host', () => {
     await assertFails(updateDoc(doc(asOther(), name, 'owned'), { name: 'taken' }))
   })
 
-  it('cannot read a subcollection under the owner event', async () => {
-    await assertFails(getDoc(doc(asOther(), 'hp_events/owned/tasks/t1')))
+  it.each(SUBCOLLECTIONS)('cannot read %s under the owner event', async (name) => {
+    await assertFails(getDoc(doc(asOther(), 'hp_events/owned', name, 'row')))
+  })
+
+  it.each(SUBCOLLECTIONS)('cannot write %s under the owner event', async (name) => {
+    // The reverse of the read case. A matching run or a deliverable planted in
+    // someone else's event is as bad as one read out of it.
+    await assertFails(
+      setDoc(doc(asOther(), 'hp_events/owned', name, 'planted'), { note: 'not mine' }),
+    )
   })
 
   it('cannot create a document stamped with someone else as owner', async () => {
@@ -180,14 +224,77 @@ describe('a brand new account', () => {
     )
   })
 
-  it('cannot create a document owned by someone else', async () => {
+  it.each(COLLECTIONS)('cannot create a %s document owned by someone else', async (name) => {
     await assertFails(
-      setDoc(doc(asNewcomer(), 'hp_people', 'theirs'), { ownerUid: OWNER, email: 'e@example.com' }),
+      setDoc(doc(asNewcomer(), name, 'theirs'), { ownerUid: OWNER, email: 'e@example.com' }),
     )
   })
 
   it('cannot read the retired allowlist document', async () => {
     await assertFails(getDoc(doc(asNewcomer(), 'hp_config/allowlist')))
+  })
+})
+
+// hp_availabilitySettings is keyed by uid: one document per host, and the
+// owner check is on the document id, not an ownerUid field. The deployed
+// block trusts the address rather than a field — no write, however buggy,
+// can produce a document whose id and owner disagree in a way the rule
+// would accept — so these cases address documents by uid instead of by a
+// fixture name. Do not fold this collection into COLLECTIONS above: its
+// fixture body carries no ownerUid on purpose.
+describe('availability settings, keyed by uid', () => {
+  const asNewcomer = () => testEnv.authenticatedContext(NEWCOMER).firestore()
+
+  it('the owner reads the document at their own uid', async () => {
+    await assertSucceeds(getDoc(doc(asOwner(), 'hp_availabilitySettings', OWNER)))
+  })
+
+  it('the owner writes the document at their own uid', async () => {
+    await assertSucceeds(
+      setDoc(doc(asOwner(), 'hp_availabilitySettings', OWNER), {
+        timezone: 'America/Los_Angeles',
+        weekly: { sun: ['08:00-11:00'] },
+      }),
+    )
+  })
+
+  it('the owner lists their own row when the query is pinned to their uid', async () => {
+    const snap = await assertSucceeds(
+      getDocs(
+        query(collection(asOwner(), 'hp_availabilitySettings'), where(documentId(), '==', OWNER)),
+      ),
+    )
+    expect(snap.size).toBe(1)
+  })
+
+  it('a second signed-in host cannot read the owner document', async () => {
+    await assertFails(getDoc(doc(asOther(), 'hp_availabilitySettings', OWNER)))
+  })
+
+  it('a second signed-in host cannot write the owner document', async () => {
+    await assertFails(setDoc(doc(asOther(), 'hp_availabilitySettings', OWNER), { timezone: 'UTC' }))
+  })
+
+  it('a second signed-in host cannot list the collection unfiltered', async () => {
+    await assertFails(getDocs(collection(asOther(), 'hp_availabilitySettings')))
+  })
+
+  it('a brand new account cannot create a document at another uid', async () => {
+    await assertFails(
+      setDoc(doc(asNewcomer(), 'hp_availabilitySettings', OWNER), { timezone: 'UTC' }),
+    )
+  })
+
+  it('a brand new account creates its own document at its own uid', async () => {
+    await assertSucceeds(
+      setDoc(doc(asNewcomer(), 'hp_availabilitySettings', NEWCOMER), { timezone: 'UTC' }),
+    )
+  })
+
+  it('a signed-out visitor cannot read it', async () => {
+    await assertFails(
+      getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'hp_availabilitySettings', OWNER)),
+    )
   })
 })
 

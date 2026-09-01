@@ -27,4 +27,15 @@ Append to whichever checkout you are working in.
 
 ---
 
-(nothing pending)
+**Pending: none. Last swept 2026-09-01 into `MATCHING.md` 1.7.0.**
+
+The 2026-08-27 M-match-0 block was swept when the M1 build merged (PR #6, 2026-09-01).
+It landed as two section 08 status rows, splitting host integration into rank (shipped,
+running in-app on the vendored matchcore) and sparks/pods (unchanged, still needing the
+Python service), plus two settled decisions in section 09: the vendored third copy of the
+rule set, and the deliberate `hp_` prefix deviation on the three analytics events.
+
+The block also flagged the section 08 pace-divergence row as stale. It was already
+corrected in 1.6.2, which records the concierge tools as ported to the half-life curve
+with a separate gate; `drift_check.py` confirms the constants agree and reports 100
+identical ranked pairs. No further action.

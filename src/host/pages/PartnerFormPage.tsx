@@ -26,6 +26,10 @@ function blankOrg(): OrgInput {
     via: '',
     relationshipTerms: '',
     notes: '',
+    // M1 fields, empty until their own editors land. Set here rather than left
+    // out so a record created today is not missing what a reader expects.
+    siteProfile: null,
+    standing: [],
   }
 }
 
@@ -105,6 +109,10 @@ function PartnerForm({
           via: initial.via ?? '',
           relationshipTerms: initial.relationshipTerms ?? '',
           notes: initial.notes ?? '',
+          // Carried through untouched. This form writes the whole record, so
+          // dropping a field it does not edit would quietly erase it.
+          siteProfile: initial.siteProfile ?? null,
+          standing: initial.standing ?? [],
         }
       : blankOrg(),
   )

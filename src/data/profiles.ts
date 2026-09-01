@@ -1,4 +1,4 @@
-import type { OrgType, OwnerRef, CrewMember, Org, Party } from './types'
+import type { OrgType, OwnerRef, CrewMember, Org, Party, TemplateMatching } from './types'
 
 export const ORG_TYPES: { value: OrgType; label: string }[] = [
   { value: 'cohost', label: 'Co-host' },
@@ -52,6 +52,22 @@ export const TYPE_PROFILES: Record<OrgType, ProfileField[]> = {
 
 export function profileFields(type: OrgType | string): ProfileField[] {
   return TYPE_PROFILES[type as OrgType] ?? []
+}
+
+/**
+ * M1 matching. One label per mode, read by the template library, the template
+ * editor, and the picker in event creation, so the three cannot drift.
+ */
+export const MATCHING_MODES: { value: TemplateMatching['mode']; label: string }[] = [
+  { value: 'rank', label: 'Rank' },
+  { value: 'sparks', label: 'Sparks' },
+  { value: 'pods', label: 'Pods' },
+]
+
+/** Chip wording for a template that pairs people up. */
+export function matchingModeLabel(mode: TemplateMatching['mode']): string {
+  const found = MATCHING_MODES.find((m) => m.value === mode)?.label ?? mode
+  return `${found} matching`
 }
 
 // Owner refs. One string addresses the host, a party, a crew person, or all.

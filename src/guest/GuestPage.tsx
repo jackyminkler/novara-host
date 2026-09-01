@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CalendarCheck, Check, X } from 'lucide-react'
+import { AtSign, CalendarCheck, Check, Link2, Mail, Phone, X } from 'lucide-react'
 import { fetchGuestView, submitGuestAction, GuestError } from './guestClient'
-import type { BookingView, GuestView, HuddleView } from './guestTypes'
+import type { BookingView, GuestCard, GuestDeliverable, GuestView, HuddleView } from './guestTypes'
 import { isBookingView, isHuddleView } from './guestTypes'
 import BookingPage from './BookingPage'
 import HuddlePage from './HuddlePage'
 import { Card, Chip, Eyebrow, SubTitle, cx } from '../ui/primitives'
-import { formatClock, formatLong, formatShort } from '../lib/dates'
+import { Input, Textarea } from '../ui/form'
+import { formatClock, formatDue, formatLong, formatShort } from '../lib/dates'
 import { track } from '../lib/analytics'
 import { googleConfigured } from '../lib/googleIdentity'
 
@@ -37,10 +38,14 @@ export default function GuestPage() {
           setView(next)
         }
         setState('ready')
-        track('hp_guest_view_opened', {
-          role: isBookingView(next) ? 'friend' : isHuddleView(next) ? 'huddle' : next.subject.roleLabel,
-          scope: next.scope,
-        })
+        // A card opening is a different question from a partner opening their
+        // slice of an event, so it is a different event name rather than a
+        // fourth value of the same one. Booking and huddle views narrow first
+        // because their shapes carry no subject.
+        if (isBookingView(next)) track('hp_guest_view_opened', { role: 'friend', scope: next.scope })
+        else if (isHuddleView(next)) track('hp_guest_view_opened', { role: 'huddle', scope: next.scope })
+        else if (next.scope === 'card') track('hp_card_viewed')
+        else track('hp_guest_view_opened', { role: next.subject.roleLabel, scope: next.scope })
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -88,6 +93,14 @@ export default function GuestPage() {
           <SubTitle className="mb-[6px]">This didn't load</SubTitle>
           <p className="text-[12.5px] text-sec">It might be the connection. Try opening the link again.</p>
         </div>
+      </Shell>
+    )
+  }
+
+  if (view.scope === 'card' && view.card) {
+    return (
+      <Shell>
+        <CardView card={view.card} token={token} />
       </Shell>
     )
   }
@@ -209,6 +222,14 @@ function PartyView({
     void submit('update_task', { taskId, status })
     track('hp_task_updated', { source: 'link' })
   }
+
+  const toggleDeliverable = (item: GuestDeliverable) => {
+    void submit('update_deliverable', { deliverableId: item.id, done: !item.done })
+    track('hp_guest_deliverable_toggled', { done: !item.done })
+  }
+
+  const mine = view.deliverables.filter((d) => d.direction === 'party')
+  const theirs = view.deliverables.filter((d) => d.direction === 'host')
 
   const myItems = view.runOfShow.filter((item) => item.mine)
   const schedule = scheduleTab === 'mine' ? myItems : view.runOfShow
@@ -352,6 +373,24 @@ function PartyView({
         </>
       )}
 
+      {mine.length > 0 && (
+        <DeliverableList
+          title="You bring"
+          counts={view.deliverableCounts.party}
+          items={mine}
+          onToggle={toggleDeliverable}
+          disabled={saving}
+        />
+      )}
+
+      {theirs.length > 0 && (
+        <DeliverableList
+          title={`${sentenceCase(view.event.hostName)} brings`}
+          counts={view.deliverableCounts.host}
+          items={theirs}
+        />
+      )}
+
       {view.runOfShow.length > 0 && (
         <>
           <p className="mb-[5px] mt-4 text-xs font-medium text-sec">Run of show</p>
@@ -405,6 +444,237 @@ function PartyView({
         This page is private to {view.subject.name}.
       </p>
     </>
+  )
+}
+
+/** "your host" is the fallback name, and a heading starts with a capital. */
+function sentenceCase(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value
+}
+
+/**
+ * One side of the agreement. The half this partner owes toggles; the half the
+ * host owes is shown and not touchable, because it is the host's to tick off.
+ * Both halves are here on purpose: an arrangement where one side quietly does
+ * everything should be visible to both of them.
+ */
+function DeliverableList({
+  title,
+  counts,
+  items,
+  onToggle,
+  disabled,
+}: {
+  title: string
+  counts: { done: number; total: number }
+  items: GuestDeliverable[]
+  onToggle?: (item: GuestDeliverable) => void
+  disabled?: boolean
+}) {
+  return (
+    <>
+      <div className="mb-[5px] mt-4 flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-sec">{title}</p>
+        <span className="text-[11px] text-mut">
+          {counts.done} of {counts.total} done
+        </span>
+      </div>
+      <Card className="!px-3 !py-2">
+        {items.map((item, index) => (
+          <div
+            key={item.id}
+            className={cx(
+              'flex items-center justify-between gap-2 py-[6px]',
+              index > 0 && 'border-t border-hair',
+            )}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px]">{item.title}</span>
+              {item.due && (
+                <span className="mt-[1px] block text-[11px] text-mut">{formatDue(item.due)}</span>
+              )}
+            </span>
+            {onToggle ? (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onToggle(item)}
+                aria-label={item.done ? `Reopen ${item.title}` : `Mark ${item.title} done`}
+              >
+                <Chip tone={item.done ? 'grn' : 'gray'}>
+                  {item.done && <Check size={11} />}
+                  {item.done ? 'Done' : 'Open'}
+                </Chip>
+              </button>
+            ) : (
+              <Chip tone={item.done ? 'grn' : 'gray'}>
+                {item.done && <Check size={11} />}
+                {item.done ? 'Done' : 'Open'}
+              </Chip>
+            )}
+          </div>
+        ))}
+      </Card>
+    </>
+  )
+}
+
+const METHOD_META = {
+  instagram: { icon: AtSign, label: 'Instagram' },
+  linkedin: { icon: Link2, label: 'LinkedIn' },
+  phone: { icon: Phone, label: 'Phone' },
+  email: { icon: Mail, label: 'Email' },
+} as const
+
+type LinkedMethod = keyof typeof METHOD_META
+
+function methodHref(kind: LinkedMethod, value: string): string {
+  if (kind === 'instagram') return `https://instagram.com/${value.replace(/^@/, '')}`
+  if (kind === 'linkedin') return value.startsWith('http') ? value : `https://${value}`
+  if (kind === 'phone') return `tel:${value.replace(/[^\d+]/g, '')}`
+  return `mailto:${value}`
+}
+
+/**
+ * The share card. Someone the host just met is holding a phone, so this is
+ * the biggest type on any guest page and every method is one tap. The form
+ * underneath sends details back the other way, which is the whole reason the
+ * card is a page rather than a picture.
+ */
+function CardView({ card, token }: { card: GuestCard; token: string }) {
+  const [name, setName] = useState('')
+  const [instagram, setInstagram] = useState('')
+  const [email, setEmail] = useState('')
+  const [note, setNote] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const methods = (Object.keys(METHOD_META) as LinkedMethod[])
+    .map((kind) => ({ kind, value: card.methods[kind] }))
+    .filter((row): row is { kind: LinkedMethod; value: string } => Boolean(row.value))
+
+  const send = () => {
+    if (!name.trim()) return
+    setSending(true)
+    setFailed(false)
+    submitGuestAction(token, 'leave_contact', {
+      name: name.trim(),
+      instagram: instagram.trim(),
+      email: email.trim(),
+      note: note.trim(),
+    })
+      .then(() => {
+        setSent(true)
+        track('hp_card_contact_left')
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setSending(false))
+  }
+
+  return (
+    <div className="py-2">
+      <h1 className="font-display text-[30px] font-semibold leading-tight">{card.displayName}</h1>
+      {card.headline && <p className="mt-[6px] text-[15px] leading-[1.45] text-sec">{card.headline}</p>}
+      {card.eventContext && (
+        <p className="mt-2">
+          <Chip tone="vio">Next up: {card.eventContext}</Chip>
+        </p>
+      )}
+
+      {methods.length > 0 && (
+        <Card className="mt-4 !px-3 !py-2">
+          {methods.map(({ kind, value }, index) => {
+            const { icon: Icon, label } = METHOD_META[kind]
+            return (
+              <a
+                key={kind}
+                href={methodHref(kind, value)}
+                target="_blank"
+                rel="noreferrer"
+                className={cx(
+                  'flex items-center gap-[10px] py-[11px]',
+                  index > 0 && 'border-t border-hair',
+                )}
+              >
+                <Icon size={16} className="shrink-0 text-vio" />
+                <span className="min-w-0">
+                  <span className="block text-[11px] text-mut">{label}</span>
+                  <span className="block truncate text-[14px] font-medium text-ink">{value}</span>
+                </span>
+              </a>
+            )
+          })}
+        </Card>
+      )}
+
+      {card.methods.other && (
+        <Card className="mt-2 !px-3 !py-[10px]">
+          <p className="text-[13px] leading-[1.5]">{card.methods.other}</p>
+        </Card>
+      )}
+
+      {sent ? (
+        <Card tone="violet" className="mt-4 !px-[14px] !py-3">
+          <p className="text-[14px] font-medium text-vio">
+            Sent. {card.displayName} has your details.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <p className="mb-[6px] mt-5 text-xs font-medium text-sec">Share your details back</p>
+          <Card className="!px-3 !py-3">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              aria-label="Your name"
+              className="mb-2 !py-[9px]"
+            />
+            <Input
+              value={instagram}
+              onChange={(e) => setInstagram(e.target.value)}
+              placeholder="Instagram, optional"
+              aria-label="Your Instagram"
+              className="mb-2 !py-[9px]"
+            />
+            <Input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="Email, optional"
+              aria-label="Your email"
+              className="mb-2 !py-[9px]"
+            />
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              placeholder="Anything worth remembering"
+              aria-label="A note"
+              className="mb-[10px]"
+            />
+            <button
+              type="button"
+              onClick={send}
+              disabled={sending || !name.trim()}
+              className="accent-gradient w-full rounded-[9px] py-[11px] text-[13px] font-medium text-white transition disabled:opacity-50"
+            >
+              {sending ? 'Sending' : 'Send my details'}
+            </button>
+            {failed && (
+              <p className="mt-2 text-center text-[12px] text-rosek">
+                That didn't send. Try again in a moment.
+              </p>
+            )}
+          </Card>
+        </>
+      )}
+
+      <p className="mt-[10px] text-center text-[11px] text-mut">
+        This card is meant to be shared. Pass it on to anyone.
+      </p>
+    </div>
   )
 }
 

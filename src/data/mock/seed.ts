@@ -11,7 +11,9 @@ import type {
   CrewMember,
   EventDoc,
   GuestToken,
+  HostCard,
   LogEntry,
+  MatchingRun,
   Org,
   Party,
   RunItem,
@@ -44,6 +46,8 @@ export interface MockStore {
   runOfShow: Record<string, RunItem[]>
   crew: Record<string, CrewMember[]>
   log: Record<string, LogEntry[]>
+  /** M1. One list per event, mirroring the hp_events/{id}/matching subcollection. */
+  matching: Record<string, MatchingRun[]>
   templates: Template[]
   contacts: CapturedContact[]
   availability: AvailabilityBlock[]
@@ -51,6 +55,8 @@ export interface MockStore {
   tokens: GuestToken[]
   people: Person[]
   feedback: Feedback[]
+  /** M1. The hp_profiles collection: one share card per host, keyed by uid. */
+  profiles: HostCard[]
   availabilitySettings: AvailabilitySettings | null
   friendLinks: FriendLink[]
   bookings: Booking[]
@@ -80,6 +86,8 @@ function org(
     via: '',
     relationshipTerms: '',
     notes: '',
+    siteProfile: null,
+    standing: [],
     createdAt: NOW,
     createdBy: HOST,
     ownerUid: HOST,
@@ -135,6 +143,96 @@ function registration(
   }
 }
 
+/**
+ * M-match-0. The matching answers on the marina signup form, as a real form
+ * would have carried them: the host's own question wording is the column, and
+ * the engine resolves it by substring, so nothing here is renamed on the way
+ * in. Fictional content like every other row, and every value is shaped the
+ * way the engine parses it: pace as mm:ss, everything multi-select as a comma
+ * separated list.
+ */
+const PACE_QUESTIONS = ['Fastest pace you would run', 'Slowest pace you would run']
+const WHEN_QUESTION = 'When can you usually run?'
+const KIND_QUESTION = 'What kind of runs do you like?'
+const HOOD_QUESTION = 'What neighborhood are you in?'
+const SHARE_QUESTION = 'What topics do you have experience with?'
+const LEARN_QUESTION = 'What topics would you like to learn about?'
+
+const PACE_RANGES = [
+  ['7:45', '8:30'],
+  ['8:15', '9:00'],
+  ['8:45', '9:30'],
+  ['9:30', '10:15'],
+  ['10:00', '11:00'],
+]
+const WHEN_ANSWERS = [
+  'Saturday morning, Sunday morning',
+  'Weekday mornings, Saturday morning',
+  'Sunday morning, Wednesday evening',
+  'Weekday mornings, Wednesday evening',
+]
+const KIND_ANSWERS = ['Easy, Long', 'Track, Tempo', 'Easy, Social', 'Long, Social', 'Easy, Track']
+const HOOD_ANSWERS = ['Marina', 'Mission', 'Sunset', 'Marina', 'Potrero']
+const SHARE_ANSWERS = [
+  'Design, Hiring',
+  'Fundraising, Community',
+  'Marketing, Events',
+  'Engineering, Hiring',
+  'Community, Nutrition',
+]
+const LEARN_ANSWERS = [
+  'Fundraising, Marketing',
+  'Design, Engineering',
+  'Hiring, Community',
+  'Events, Fundraising',
+  'Marketing, Design',
+]
+
+function matchingAnswers(i: number): Record<string, string> {
+  const pace = PACE_RANGES[i % PACE_RANGES.length]
+  return {
+    [PACE_QUESTIONS[0]]: pace[0],
+    [PACE_QUESTIONS[1]]: pace[1],
+    [WHEN_QUESTION]: WHEN_ANSWERS[i % WHEN_ANSWERS.length],
+    [KIND_QUESTION]: KIND_ANSWERS[i % KIND_ANSWERS.length],
+    [HOOD_QUESTION]: HOOD_ANSWERS[i % HOOD_ANSWERS.length],
+    [SHARE_QUESTION]: SHARE_ANSWERS[i % SHARE_ANSWERS.length],
+    [LEARN_QUESTION]: LEARN_ANSWERS[i % LEARN_ANSWERS.length],
+  }
+}
+
+/**
+ * Someone who got here by being met rather than by signing up: no email, no
+ * registrations, tagged so where they came from stays readable. This is what
+ * `personFromContact` produces, and `ct-priya` is the capture that produced it.
+ */
+const PROMOTED_FROM_CAPTURE: Person = {
+  id: 'person-priya',
+  ownerUid: HOST,
+  email: '',
+  firstName: 'Priya',
+  lastName: 'Shah',
+  fullName: 'Priya Shah',
+  phone: '415 555 0113',
+  handles: { instagram: '@priya.runs', linkedin: 'linkedin.com/in/priyashah' },
+  appUserUid: null,
+  // No registration anywhere, so there is nothing for the tier rules to read.
+  // Invited is the least wrong of the three, and the first real export that
+  // carries her corrects it.
+  tier: 'invited_only',
+  eventCount: 0,
+  firstSeenAt: '2026-07-16T20:10:00.000Z',
+  lastSeenAt: '2026-07-16T20:10:00.000Z',
+  sources: ['capture'],
+  referredBy: [],
+  notes: "Runs sub 8s, wants in on the next sunrise five. Knows a mural artist who does event banners. Ask about her club's Thursday crew.",
+  // The capture still holds the open follow-up. Two rows for one handshake
+  // would read as two things owed.
+  followUp: null,
+  tags: ['met in person'],
+  registrations: [],
+}
+
 function buildPeople(): Person[] {
   const names = [
     'Ada Okafor', 'Bo Lindqvist', 'Cara Mendes', 'Dev Raman', 'Elle Fontaine',
@@ -169,7 +267,14 @@ function buildPeople(): Person[] {
       )
       if (i % 3 === 0) {
         registrations.push(
-          registration(PERSON_EVENTS[1], 'approved', '2026-06-08', { source: 'referral' }),
+          registration(PERSON_EVENTS[1], 'approved', '2026-06-08', {
+            source: 'referral',
+            // One of the nine left every optional question blank, which is the
+            // state the matching tab has to survive: the engine scores nobody
+            // against them and nobody against them, rather than inventing a
+            // zero and filing them as a bad match (MATCHING.md trap 13).
+            answers: i === 15 ? {} : matchingAnswers(i),
+          }),
         )
       }
       if (i % 9 === 0) {
@@ -361,6 +466,22 @@ export function buildStore(): MockStore {
           'Founding partner, covers most event costs, everything informal and in good standing',
         notes:
           'Field team travels the last week of every month. Needs three weeks of lead time for station staffing.',
+        standing: [
+          {
+            id: 'st-alma-1',
+            kind: 'blackout',
+            text: 'Field team travels the last week of every month.',
+            startDate: '2026-08-24',
+            endDate: '2026-08-31',
+          },
+          {
+            id: 'st-alma-2',
+            kind: 'window',
+            text: 'Tuesday and Thursday mornings suit their staffing best.',
+            startDate: null,
+            endDate: null,
+          },
+        ],
       },
     ),
     org(
@@ -370,7 +491,19 @@ export function buildStore(): MockStore {
       'Event community company running clubs across the bay',
       [{ name: 'Nia Barros', role: 'Programs', email: 'nia@commonground.co' }],
       { audience: 'Their Thursday run list, around 400', split: 'They bring people, we bring production' },
-      { via: 'Met at a city run series', relationshipTerms: 'Even split, no money changes hands' },
+      {
+        via: 'Met at a city run series',
+        relationshipTerms: 'Even split, no money changes hands',
+        standing: [
+          {
+            id: 'st-common-1',
+            kind: 'blackout',
+            text: 'Their own season closer takes the whole of that week.',
+            startDate: '2026-12-07',
+            endDate: '2026-12-13',
+          },
+        ],
+      },
     ),
     org(
       'loopwork-ai',
@@ -400,6 +533,45 @@ export function buildStore(): MockStore {
       {
         via: 'Friends first, launched at our first event',
         relationshipTerms: 'Free for our events, would charge others market rate',
+      },
+    ),
+    org(
+      'main-post-lawn',
+      'Main Post Lawn',
+      'venue',
+      'Open lawn with a paved edge, no power',
+      [{ name: 'Site office', role: 'Permits', email: 'events@mainpostlawn.example' }],
+      { capacity: 'Comfortable to about 150 on the lawn', permits: 'Two weeks lead time, sound rules after 9' },
+      {
+        via: 'Walked it on a Sunday and asked',
+        notes: 'Site office answers slowly. Ask early, ask twice.',
+        siteProfile: {
+          lessons: [
+            {
+              id: 'sl1',
+              text: 'Wind picks up hard after 9, so the banner needs weights, not stakes.',
+              eventId: 'marina-track-social',
+              at: '2026-07-17T09:00:00.000Z',
+            },
+            {
+              id: 'sl2',
+              text: 'No outlets anywhere on the lawn. The cart and the DJ both run off the generator.',
+              eventId: null,
+              at: '2026-06-02T09:00:00.000Z',
+            },
+          ],
+          permitThresholds: { amplifiedSound: true, headcountAbove: 100 },
+          notes: 'Trash goes out with you. There is no bin near the flagpole.',
+        },
+        standing: [
+          {
+            id: 'st-lawn-1',
+            kind: 'window',
+            text: 'Mornings before 10 are usually free. Afternoons book up months out.',
+            startDate: null,
+            endDate: null,
+          },
+        ],
       },
     ),
   ]
@@ -439,6 +611,23 @@ export function buildStore(): MockStore {
     },
     signupCount: 61,
     recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
+    spendLog: [
+      { id: 'sp1', label: 'Coffee cart, event rate', amount: 250, kind: 'cash', partyId: 'p-wolf' },
+      { id: 'sp2', label: 'Generator rental for the day', amount: 120, kind: 'cash', partyId: null },
+      { id: 'sp3', label: 'Coffee beans covered by the sponsor', amount: 300, kind: 'inkind', partyId: 'p-loopwork' },
+      { id: 'sp4', label: 'DJ set, friend rate', amount: 500, kind: 'inkind', partyId: 'p-golden' },
+    ],
+    talkTracks: [
+      'Ask what got them out of bed this early. It is a better opener than what they do.',
+      'The station at the finish is free and takes ten minutes. Say so before the run, not after.',
+      'Loopwork are hiring. If someone is looking, walk them over rather than pointing.',
+    ],
+    shotList: [
+      { id: 'sh1', description: 'Wide shot of the group at the flagpole before the start', owner: 'host', done: false },
+      { id: 'sh2', description: 'Coffee cart with a queue, from the lawn side', owner: 'party:p-wolf', done: false },
+      { id: 'sh3', description: 'Station in use, faces only with a yes', owner: 'party:p-alma', done: false },
+      { id: 'sh4', description: 'Two runners talking at the finish, backs to the sun', owner: 'crew:c-brad', done: false },
+    ],
     templateId: 'tpl-dj-morning',
     hostUid: HOST,
     hostDisplayName: 'Maya',
@@ -448,12 +637,23 @@ export function buildStore(): MockStore {
   const marina: EventDoc = {
     id: 'marina-track-social',
     ownerUid: HOST,
-    sourceKey: null,
+    // The wrapped event carries the slug its guest list was imported under, so
+    // the recap can report where those people came from. Events created in the
+    // workspace have none until a list is imported against them.
+    sourceKey: '2026-06-20-marina-track',
     title: 'Marina track social',
     status: 'wrapped',
     description:
       'An evening track session and social hour with a coffee cart and a short wellness demo.',
-    dateOptions: [{ id: 'm-opt-a', startsAt: '2026-07-16T18:30:00', label: '' }],
+    // Three options went out and one was confirmed. The two that lost are kept
+    // rather than tidied away: the answers against them are the only history a
+    // partner's weekday pattern can be read from, and a confirmed event shows
+    // its banner rather than its matrix, so nothing renders them twice.
+    dateOptions: [
+      { id: 'm-opt-a', startsAt: '2026-07-16T18:30:00', label: '' },
+      { id: 'm-opt-b', startsAt: '2026-07-11T18:30:00', label: '' },
+      { id: 'm-opt-c', startsAt: '2026-07-18T18:30:00', label: '' },
+    ],
     confirmedDateOptionId: 'm-opt-a',
     location: {
       name: 'Marina Green track',
@@ -478,10 +678,66 @@ export function buildStore(): MockStore {
       postsRan: '6 across both accounts',
       generatedAt: '2026-07-18T10:00:00.000Z',
     },
-    templateId: null,
+    // The wrapped event carries a little spend too, so the recap has something
+    // real to report against. Talk tracks and the shot list were day-of tools
+    // and are left empty here on purpose: not every event uses every part.
+    spendLog: [
+      { id: 'msp1', label: 'Coffee cart, two hours', amount: 250, kind: 'cash', partyId: 'mp-wolf' },
+      { id: 'msp2', label: 'Track booking', amount: 90, kind: 'cash', partyId: null },
+    ],
+    talkTracks: [],
+    shotList: [],
+    // Made from the DJ morning template, which is what gives the matching tab
+    // its mode line: this event pairs people up because its plan says so,
+    // rather than because someone picked a mode on the day.
+    templateId: 'tpl-dj-morning',
     hostUid: HOST,
     hostDisplayName: 'Maya',
     createdAt: '2026-06-01T12:00:00.000Z',
+  }
+
+  /**
+   * A confirmed event with no parties on it at all, which is the solo-first
+   * principle as a fixture: one person, one date, one plan, nothing sent to
+   * anyone. It is also the only event here that is both confirmed and still
+   * ahead, so it is what the share card names as context and what the
+   * follow-up hub writes its invite line from.
+   */
+  const embarcadero: EventDoc = {
+    id: 'embarcadero-easy-miles',
+    ownerUid: HOST,
+    sourceKey: null,
+    title: 'Embarcadero easy miles',
+    status: 'confirmed',
+    description: 'A slow four miles along the water, coffee after for whoever wants it.',
+    dateOptions: [{ id: 'e-opt-a', startsAt: '2026-09-10T07:15:00', label: '' }],
+    confirmedDateOptionId: 'e-opt-a',
+    location: {
+      name: 'Embarcadero, Pier 7',
+      meetPoint: 'Bench at the foot of the pier',
+      finishPoint: 'Ferry Building steps',
+      notes: 'Flat the whole way. Bathrooms at the Ferry Building.',
+    },
+    links: [
+      { id: 'el1', label: 'Sign up', url: 'https://lu.ma/embarcadero-easy', owner: 'host', status: 'final' },
+    ],
+    capacityTarget: 40,
+    campaignGoal: '',
+    governance: {
+      officialListing: 'Luma',
+      listingUrl: 'https://lu.ma/embarcadero-easy',
+      guestContactsOwner: 'Novara, assigned host',
+      dualPosts: '',
+    },
+    signupCount: 18,
+    recap: { headcount: null, remembered: [], photosLink: '', postsRan: '', generatedAt: null },
+    spendLog: [],
+    talkTracks: [],
+    shotList: [],
+    templateId: null,
+    hostUid: HOST,
+    hostDisplayName: 'Maya',
+    createdAt: '2026-08-24T09:00:00.000Z',
   }
 
   const answered = (value: Party['dateResponses'][string]['value'], source: 'link' | 'host' = 'link') => ({
@@ -508,6 +764,12 @@ export function buildStore(): MockStore {
         profile: { staffing: 'Three at the station', consentOwner: 'Alma Health field team' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-alma-1', direction: 'party', title: 'Station kit and signage on site by 6:30', due: '2026-08-27', done: false },
+          { id: 'd-alma-2', direction: 'party', title: 'Consent wording sent over for the page', due: '2026-08-24', done: true },
+          { id: 'd-alma-3', direction: 'host', title: 'Flat spot at the finish, marked out the night before', due: '2026-08-26', done: false },
+          { id: 'd-alma-4', direction: 'host', title: 'Welcome mention and a link in the recap', due: null, done: false },
+        ],
         order: 0,
       },
       {
@@ -525,6 +787,10 @@ export function buildStore(): MockStore {
         profile: { audience: 'Their Thursday run list, around 400', split: 'They bring people, we bring production' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-common-1', direction: 'party', title: 'Post to the Thursday list twice, two weeks out and the night before', due: '2026-08-26', done: false },
+          { id: 'd-common-2', direction: 'host', title: 'Co-host billing on the page and the flyer', due: '2026-08-20', done: true },
+        ],
         order: 1,
       },
       {
@@ -542,6 +808,11 @@ export function buildStore(): MockStore {
         profile: { value: 'Covers the coffee bean cost, around $300', goal: 'Awareness, two hiring conversations' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-loop-1', direction: 'party', title: 'Logo file at print size', due: '2026-08-22', done: false },
+          { id: 'd-loop-2', direction: 'host', title: 'Logo on the flyer and the page', due: '2026-08-24', done: false },
+          { id: 'd-loop-3', direction: 'host', title: 'Table space near the finish', due: null, done: false },
+        ],
         order: 2,
       },
       {
@@ -559,6 +830,7 @@ export function buildStore(): MockStore {
         profile: { rate: 'Event rate $250', terms: 'Needs a flat spot and 20 amps or a generator' },
         customFields: [],
         outcomes: [],
+        deliverables: [],
         order: 3,
       },
       {
@@ -576,7 +848,38 @@ export function buildStore(): MockStore {
         profile: { rate: 'Friend rate, no charge', terms: 'Tables and generator provided by us' },
         customFields: [],
         outcomes: [],
+        deliverables: [
+          { id: 'd-golden-1', direction: 'party', title: 'Set list length and a quiet start confirmed', due: '2026-08-21', done: true },
+          { id: 'd-golden-2', direction: 'host', title: 'Two tables and the generator, in place by 6:25', due: '2026-08-27', done: false },
+        ],
         order: 4,
+      },
+      // The site is a party like any other. It is what carries the permit
+      // thresholds and the lessons into the workspace, and it has no guest
+      // link: the site office answers email, not a link.
+      {
+        id: 'p-lawn',
+        orgId: 'main-post-lawn',
+        roleOnEvent: 'venue',
+        status: 'confirmed',
+        terms: { gives: 'The lawn and the paved edge from 6 to 9', gets: 'Named on the page, trash carried out' },
+        goal: 'A clean site and no complaints',
+        cta: '',
+        dateResponses: { 'opt-a': answered('yes', 'host'), 'opt-b': answered('yes', 'host') },
+        constraintNote: 'Sound rules after 9. Permit paperwork takes two weeks.',
+        tokenId: null,
+        nudgeCount: 0,
+        profile: {
+          capacity: 'Comfortable to about 150 on the lawn',
+          permits: 'Two weeks lead time, sound rules after 9',
+        },
+        customFields: [],
+        outcomes: [],
+        deliverables: [
+          { id: 'd-lawn-1', direction: 'party', title: 'Permit confirmation in writing', due: '2026-08-13', done: false },
+          { id: 'd-lawn-2', direction: 'host', title: 'Site plan and headcount to the site office', due: '2026-08-10', done: true },
+        ],
+        order: 5,
       },
     ],
     'marina-track-social': [
@@ -588,7 +891,13 @@ export function buildStore(): MockStore {
         terms: { gives: 'Testing station, staff of two', gets: 'Station by the tables, welcome mention' },
         goal: '30 tests completed',
         cta: 'Book a testing slot',
-        dateResponses: { 'm-opt-a': answered('yes') },
+        // Two Saturdays turned down here and a third on the Presidio run is
+        // what the weekday pattern reads: their field team works weekends.
+        dateResponses: {
+          'm-opt-a': answered('yes'),
+          'm-opt-b': answered('no'),
+          'm-opt-c': answered('no'),
+        },
         constraintNote: '',
         tokenId: 'tok-alma-marina',
         nudgeCount: 0,
@@ -598,6 +907,10 @@ export function buildStore(): MockStore {
           { id: 'o1', label: 'Tests completed', value: '41' },
           { id: 'o2', label: 'Leads shared', value: '18, with consent' },
           { id: 'o3', label: 'Station visits', value: 'Around 60' },
+        ],
+        deliverables: [
+          { id: 'd-mp-alma-1', direction: 'party', title: 'Station kit on site by 6', due: '2026-07-16', done: true },
+          { id: 'd-mp-alma-2', direction: 'host', title: 'Welcome mention and a spot by the tables', due: '2026-07-16', done: true },
         ],
         order: 0,
       },
@@ -609,13 +922,14 @@ export function buildStore(): MockStore {
         terms: { gives: 'Cart for two hours', gets: 'Event rate paid' },
         goal: 'Serve 100 drinks',
         cta: 'Grab a coffee',
-        dateResponses: { 'm-opt-a': answered('yes') },
+        dateResponses: { 'm-opt-a': answered('yes'), 'm-opt-b': answered('maybe') },
         constraintNote: '',
         tokenId: 'tok-wolf-marina',
         nudgeCount: 0,
         profile: {},
         customFields: [{ label: 'Cups served', value: '104' }],
         outcomes: [{ id: 'o4', label: 'Cups served', value: '104' }],
+        deliverables: [],
         order: 1,
       },
     ],
@@ -695,6 +1009,11 @@ export function buildStore(): MockStore {
         { offsetMinutes: 90, title: 'Group photo', ownerSlot: 'host' },
       ],
       defaults: { capacityTarget: 80, durationMinutes: 150, startTime: '07:00' },
+      matching: {
+        mode: 'rank',
+        profileName: 'pace',
+        requiredQuestions: ['What pace do you usually run?'],
+      },
       createdFrom: 'seed',
       createdAt: NOW,
     },
@@ -725,11 +1044,28 @@ export function buildStore(): MockStore {
         { offsetMinutes: 75, title: 'Coffee and open conversation', ownerSlot: 'all' },
       ],
       defaults: { capacityTarget: 50, durationMinutes: 135, startTime: '07:30' },
+      // Placeholder question wording, like every other fixture here. The real
+      // questions belong to whoever runs the event and arrive with their
+      // signup export, never from application code.
+      matching: {
+        mode: 'sparks',
+        profileName: 'mentor',
+        requiredQuestions: [
+          'What brings you out this morning?',
+          'What could you help someone else with?',
+          'What are you hoping to learn?',
+          'What pace do you plan to run?',
+        ],
+      },
       createdFrom: 'seed',
       createdAt: NOW,
     },
   ]
 
+  // Captures are the fast inbox. One of these has already been folded into the
+  // people list, which is why it carries a personId and the other two do not:
+  // the promote action is offered exactly once, and for a capture with no
+  // email that link is the only thing recording that it happened.
   const contacts: CapturedContact[] = [
     {
       id: 'ct-priya',
@@ -737,7 +1073,13 @@ export function buildStore(): MockStore {
       handles: { instagram: '@priya.runs', linkedin: 'linkedin.com/in/priyashah', phone: '415 555 0113' },
       eventId: 'marina-track-social',
       note: "Runs sub 8s, wants in on the next sunrise five. Knows a mural artist who does event banners. Ask about her club's Thursday crew.",
+      quote: 'I have never met anyone at a run before. That is the part I did not expect.',
+      // Voice notes are null across the fixture. A recorded one only exists
+      // for the page that recorded it, so seeding a fake URL would render a
+      // player that cannot play anything.
+      voiceNote: null,
       followUp: { due: '2026-08-19', done: false },
+      personId: 'person-priya',
       capturedAt: '2026-07-16T20:10:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -748,7 +1090,10 @@ export function buildStore(): MockStore {
       handles: { instagram: '@dannyko', email: 'danny@example.com' },
       eventId: 'marina-track-social',
       note: 'Photographer, offered to shoot the next one for tagged credit.',
+      quote: '',
+      voiceNote: null,
       followUp: { due: '2026-08-21', done: false },
+      personId: null,
       capturedAt: '2026-07-16T20:25:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -759,7 +1104,10 @@ export function buildStore(): MockStore {
       handles: { instagram: '@jordanreyes' },
       eventId: 'marina-track-social',
       note: 'Runs a Wednesday club in Oakland, open to a joint morning.',
+      quote: '',
+      voiceNote: null,
       followUp: { due: '2026-07-18', done: true },
+      personId: null,
       capturedAt: '2026-07-16T20:40:00.000Z',
       capturedBy: HOST,
       ownerUid: HOST,
@@ -778,8 +1126,10 @@ export function buildStore(): MockStore {
   const plan = buildPlan()
 
   const tokens: GuestToken[] = [
+    // A party without a link has no token document. The venue is one: the site
+    // office answers email, not a link.
     ...Object.entries(parties).flatMap(([eventId, list]) =>
-      list.map((p) => ({
+      list.filter((p) => p.tokenId).map((p) => ({
         id: p.tokenId as string,
         ownerUid: HOST,
         eventId,
@@ -792,7 +1142,114 @@ export function buildStore(): MockStore {
       })),
     ),
     plan.token,
+    // The card token is the one scope with no event behind it, so eventId is
+    // empty and the subject is the host.
+    {
+      id: 'tok-card-maya',
+      ownerUid: HOST,
+      eventId: '',
+      scope: 'card' as const,
+      subjectId: HOST,
+      revoked: false,
+      createdAt: NOW,
+      lastUsedAt: null,
+      expiresAt: null,
+    },
   ]
+
+  // M1. The card the host hands out, with the token the public link opens.
+  const profiles: HostCard[] = [
+    {
+      id: HOST,
+      ownerUid: HOST,
+      displayName: 'Maya',
+      headline: 'I run mornings in the city. Come to the next one.',
+      methods: {
+        instagram: '@mayaruns',
+        email: 'maya@example.com',
+        other: 'Thursday list, ask me to add you',
+      },
+      cardTokenId: 'tok-card-maya',
+      updatedAt: '2026-08-18T09:00:00.000Z',
+    },
+  ]
+
+  // M-match-0. One stored run, so the tab has history the first time it opens,
+  // and on the event that can actually run another one. The payload is exactly
+  // what `matchcore.rank` returns: keyed by person, each with their top
+  // matches, the reasons built only from what both sides answered. Kept and
+  // never interpreted by the seam.
+  //
+  // An earlier, smaller run than the one the tab will produce today: four of
+  // the nine had signed up when it was taken.
+  const rankMatch = (
+    name: string,
+    email: string,
+    total: number,
+    confidence: number,
+    why: string,
+    breakdown: Record<string, number | null>,
+  ) => ({
+    name,
+    email,
+    total,
+    confidence,
+    lb: Math.round((total - 0.5 * (1 - confidence)) * 1e4) / 1e4,
+    breakdown,
+    why,
+  })
+
+  const full = { pace: 1, availability: 0.5, runType: 0.33, neighborhood: 1, topic: 0.5 }
+  const thin = { pace: 0.7071, availability: 0.5, runType: 0, neighborhood: 0, topic: 0.25 }
+
+  const matching: Record<string, MatchingRun[]> = {
+    'presidio-sunrise-five': [],
+    'marina-track-social': [
+      {
+        id: 'mr1',
+        mode: 'rank',
+        profileName: 'pace',
+        engineVersion: 'matchcore rank, console copy 482b9468',
+        createdAt: '2026-06-18T16:20:00.000Z',
+        peopleCount: 4,
+        matchedCount: 4,
+        results: {
+          'ada.okafor@example.com': {
+            name: 'Ada Okafor',
+            email: 'ada.okafor@example.com',
+            matches: [
+              rankMatch('Dev Raman', 'dev.raman@example.com', 0.8812, 1, 'pace ranges overlap; both free saturday morning; both in Marina', full),
+              rankMatch('Gia Petrov', 'gia.petrov@example.com', 0.7408, 0.9, 'paces within 60s/mile; both like easy', thin),
+            ],
+          },
+          'dev.raman@example.com': {
+            name: 'Dev Raman',
+            email: 'dev.raman@example.com',
+            matches: [
+              rankMatch('Ada Okafor', 'ada.okafor@example.com', 0.8812, 1, 'pace ranges overlap; both free saturday morning; both in Marina', full),
+              rankMatch('Jonah Brandt', 'jonah.brandt@example.com', 0.7115, 0.9, 'paces within 45s/mile; can talk hiring', thin),
+            ],
+          },
+          'gia.petrov@example.com': {
+            name: 'Gia Petrov',
+            email: 'gia.petrov@example.com',
+            matches: [
+              rankMatch('Ada Okafor', 'ada.okafor@example.com', 0.7408, 0.9, 'paces within 60s/mile; both like easy', thin),
+              rankMatch('Jonah Brandt', 'jonah.brandt@example.com', 0.6903, 0.9, 'paces within 75s/mile; both free sunday morning', thin),
+            ],
+          },
+          'jonah.brandt@example.com': {
+            name: 'Jonah Brandt',
+            email: 'jonah.brandt@example.com',
+            matches: [
+              rankMatch('Dev Raman', 'dev.raman@example.com', 0.7115, 0.9, 'paces within 45s/mile; can talk hiring', thin),
+              rankMatch('Gia Petrov', 'gia.petrov@example.com', 0.6903, 0.9, 'paces within 75s/mile; both free sunday morning', thin),
+            ],
+          },
+        },
+      },
+    ],
+  }
 
   const log: Record<string, LogEntry[]> = {
     'presidio-sunrise-five': [],
@@ -803,19 +1260,21 @@ export function buildStore(): MockStore {
 
   return {
     orgs,
-    events: [presidio, marina],
+    events: [presidio, marina, embarcadero],
     parties,
     tasks,
     runOfShow,
     crew,
     log,
+    matching,
     templates,
     contacts,
     availability,
     moments,
     tokens,
-    people: buildPeople(),
+    people: [...buildPeople(), PROMOTED_FROM_CAPTURE],
     feedback: [],
+    profiles,
     // Availability starts empty on purpose: the first thing the page asks for
     // is a real calendar, and a fixture calendar would make the derivation
     // look like it works before it has seen anything true.

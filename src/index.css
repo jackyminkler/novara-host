@@ -73,3 +73,77 @@
   border-width: 0.5px;
   border-style: solid;
 }
+
+/* The share card on paper. One card, roughly 3.5 by 5 inches, on whatever
+   stock the printer is holding, with a hairline to cut along. The sheet is
+   absent from the screen and is the only thing on the page in print.
+
+   Everything else is hidden with visibility rather than display, because the
+   sheet sits inside the app's flex layout and collapsing its ancestors would
+   take it with them. */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+
+  .print-sheet {
+    display: block;
+    position: absolute;
+    inset: 0;
+  }
+
+  .print-card {
+    box-sizing: border-box;
+    width: 3.5in;
+    height: 5in;
+    padding: 0.34in 0.3in;
+    border: 0.5pt solid var(--color-line);
+    border-radius: 0.11in;
+    text-align: center;
+  }
+
+  .print-name {
+    font-family: var(--font-display);
+    font-size: 25pt;
+    font-weight: 600;
+    line-height: 1.15;
+    color: var(--color-ink);
+  }
+
+  .print-headline {
+    margin-top: 5pt;
+    font-size: 10.5pt;
+    line-height: 1.4;
+    color: var(--color-sec);
+  }
+
+  .print-qr {
+    display: block;
+    width: 1.85in;
+    height: 1.85in;
+    margin: 0.2in auto 0.14in;
+  }
+
+  .print-method {
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: var(--color-ink);
+  }
+
+  @page {
+    margin: 0.4in;
+  }
+}

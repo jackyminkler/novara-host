@@ -8,6 +8,7 @@ import {
   Button, Card, Chip, GhostButton, KV, Loading, PageTitle, QuietButton, Sub, cx,
 } from '../../ui/primitives'
 import { Field, Input, Label, Select, Textarea } from '../../ui/form'
+import { matchingModeLabel } from '../../data/profiles'
 import type { AvailabilityBlock, AvailabilitySettings, DateOption, Org, Template } from '../../data/types'
 import { awayConflict, daysBetween, formatShort, holidayOn, isRushRunway, pluralDays, toDateKey, toLocalInputValue } from '../../lib/dates'
 import { suggest } from '../../lib/availability'
@@ -276,6 +277,11 @@ function StepTemplate({
             <span className="mt-[2px] block text-[11px] text-mut">
               {t.roleSlots.length} slots, {t.taskSkeleton.length} tasks, your template
             </span>
+            {t.matching && (
+              <Chip tone="vio" className="mt-[6px]">
+                {matchingModeLabel(t.matching.mode)}
+              </Chip>
+            )}
           </button>
         ))}
         <button type="button" onClick={() => onSelect(null)} className={cardClass(selected === null)}>
@@ -285,7 +291,8 @@ function StepTemplate({
       </div>
       {templates.length === 0 && (
         <p className="mb-3 text-[11px] text-mut">
-          No templates saved yet. Blank works fine, and saving an event as a template arrives in M1.
+          No templates saved yet. Blank works fine, and any event you plan can be saved as one from
+          its overview.
         </p>
       )}
       <Button onClick={onNext}>Next, basics</Button>

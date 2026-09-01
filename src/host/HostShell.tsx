@@ -13,6 +13,7 @@ import {
   ChevronsRight,
   Clock,
   House,
+  LayoutTemplate,
   LogOut,
   NotebookPen,
   Sparkles,
@@ -39,6 +40,9 @@ import PersonDetailPage from "./pages/PersonDetailPage";
 import PartnerDetailPage from "./pages/PartnerDetailPage";
 import PartnerFormPage from "./pages/PartnerFormPage";
 import CapturePage from "./pages/CapturePage";
+import HostCardPage from "./pages/HostCardPage";
+import TemplatesPage from "./pages/TemplatesPage";
+import TemplateEditorPage from "./pages/TemplateEditorPage";
 import RecapEditorPage from "./event/RecapEditorPage";
 
 interface NavItem {
@@ -51,6 +55,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/app", label: "Today", icon: House, end: true },
   { to: "/app/events", label: "Events", icon: Sparkles },
+  { to: "/app/templates", label: "Templates", icon: LayoutTemplate },
   { to: "/app/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/app/availability", label: "Availability", icon: Clock },
   { to: "/app/plans", label: "Plans", icon: CalendarCheck },
@@ -212,6 +217,11 @@ export default function HostShell() {
           <Route path="events/new" element={<NewEventPage />} />
           <Route path="events/:eventId/recap" element={<RecapEditorPage />} />
           <Route path="events/:eventId/*" element={<EventWorkspace />} />
+          <Route path="templates" element={<TemplatesPage />} />
+          <Route
+            path="templates/:templateId"
+            element={<TemplateEditorPage />}
+          />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="availability" element={<AvailabilityPage />} />
           <Route path="plans" element={<PlansPage />} />
@@ -223,6 +233,9 @@ export default function HostShell() {
           <Route path="people" element={<PeoplePage />} />
           <Route path="people/:personId" element={<PersonDetailPage />} />
           <Route path="capture" element={<CapturePage />} />
+          {/* Not in the nav: it is reached from Capture, which is where a
+              host already is when handing out a card. */}
+          <Route path="card" element={<HostCardPage />} />
           {/* PRD 3.4 called this orgs; the wireframes call it partners. */}
           <Route
             path="orgs"

@@ -1,13 +1,21 @@
 import { useState } from 'react'
-import { Plus, X } from 'lucide-react'
-import { Card, EmptyState, QuietButton, cx } from '../../ui/primitives'
+import { Check, Plus, X } from 'lucide-react'
+import { Card, EmptyState, Eyebrow, QuietButton, Sub, cx } from '../../ui/primitives'
 import { Input, InlineText } from '../../ui/form'
 import { useEvent } from './EventContext'
 import { OwnerChip } from './InlineEditors'
-import type { RunItem } from '../../data/types'
+import { track } from '../../lib/analytics'
+import type { RunItem, ShotItem } from '../../data/types'
 
 // Editorial timeline with owner chips including crew and all. Large type and
 // high contrast, because this gets read outdoors at 7 am.
+//
+// M1 shot list sits under the timeline rather than inside it: photos happen
+// across the morning rather than at a minute, and the person holding the
+// camera is usually not the person running the item.
+
+let shotSeq = 0
+const nextShotId = () => `sh-${Date.now().toString(36)}-${(shotSeq += 1)}`
 
 export default function RunOfShowTab() {
   const { bundle, run } = useEvent()
@@ -122,6 +130,108 @@ export default function RunOfShowTab() {
           </div>
         )
       )}
+
+      <ShotList />
     </>
+  )
+}
+
+/** What to photograph, and who is holding the camera. */
+function ShotList() {
+  const { bundle, run } = useEvent()
+  const [draft, setDraft] = useState('')
+
+  const eventId = bundle.event.id
+  const shots = bundle.event.shotList ?? []
+
+  const write = (next: ShotItem[]) => run((api) => api.updateEvent(eventId, { shotList: next }))
+
+  const patch = (id: string, change: Partial<ShotItem>) =>
+    write(shots.map((s) => (s.id === id ? { ...s, ...change } : s)))
+
+  const add = () => {
+    const description = draft.trim()
+    if (!description) return
+    write([...shots, { id: nextShotId(), description, owner: 'host', done: false }])
+    setDraft('')
+  }
+
+  return (
+    <div className="mt-5">
+      <Eyebrow className="mb-[6px]">Shot list</Eyebrow>
+
+      {shots.length > 0 && (
+        <Card className="mb-2 !px-[18px] !py-[6px]">
+          {shots.map((shot, index) => (
+            <div
+              key={shot.id}
+              className={cx(
+                'flex flex-wrap items-center justify-between gap-2 py-[9px]',
+                index > 0 && 'border-t border-hair',
+              )}
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <button
+                  type="button"
+                  aria-label={shot.done ? 'Mark not taken' : 'Mark taken'}
+                  onClick={() => {
+                    patch(shot.id, { done: !shot.done })
+                    track('hp_shot_toggled', { eventId })
+                  }}
+                  className={cx(
+                    'hairline flex size-[18px] shrink-0 items-center justify-center rounded-md transition',
+                    shot.done
+                      ? 'border-transparent bg-grn text-grnk'
+                      : 'border-[#dad5ec] text-transparent hover:border-viodash',
+                  )}
+                >
+                  <Check size={12} />
+                </button>
+                <InlineText
+                  ariaLabel="Shot"
+                  value={shot.description}
+                  onCommit={(next) => next && patch(shot.id, { description: next })}
+                  className={cx('flex-1 !text-[13px]', shot.done && 'text-mut line-through')}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-[6px]">
+                <OwnerChip
+                  owner={shot.owner}
+                  includeAll
+                  tone={shot.owner === 'all' ? 'vio' : 'gray'}
+                  onChange={(owner) => patch(shot.id, { owner })}
+                />
+                <button
+                  type="button"
+                  aria-label="Delete shot"
+                  onClick={() => write(shots.filter((s) => s.id !== shot.id))}
+                  className="text-mut transition hover:text-rosek"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="The shot you would be sad to miss"
+          aria-label="New shot"
+          className="!w-auto min-w-[200px] flex-1"
+        />
+        <QuietButton onClick={add}>
+          <Plus size={12} />
+          Add shot
+        </QuietButton>
+      </div>
+      {shots.length === 0 && (
+        <Sub>Photos are the recap. Name a few now so nobody has to remember at 7 am.</Sub>
+      )}
+    </div>
   )
 }

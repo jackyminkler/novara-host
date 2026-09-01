@@ -72,6 +72,13 @@ service cloud.firestore {
       match /log/{entryId} {
         allow read, write: if hpOwnsEvent(eventId);
       }
+      // M1 matching. One document per run, so a later run never overwrites
+      // what the last one produced. Explicit path like every sibling above:
+      // `matching` is not hp_-prefixed, so a collection-group rule would span
+      // the consumer app's subcollections in the shared ruleset.
+      match /matching/{runId} {
+        allow read, write: if hpOwnsEvent(eventId);
+      }
     }
 
     match /hp_templates/{templateId} {
@@ -112,6 +119,45 @@ service cloud.firestore {
     match /hp_feedback/{entryId} {
       allow read, update, delete: if hpOwns();
       allow create: if hpOwnsNew();
+    }
+
+    // M1. The host's share card, one document per host. The document id is
+    // the host's uid, so reading a card is a get rather than a query. ownerUid
+    // is still what the rules test: the id matching the uid is a convenience,
+    // and hpOwnsNew() is what stops a document being written at another
+    // uid's path.
+    match /hp_profiles/{uid} {
+      allow read, update, delete: if hpOwns();
+      allow create: if hpOwnsNew();
+    }
+
+    // Personal availability, F14 to F19. Deployed 2026-08-29, read back and
+    // verified 2026-08-31 (ruleset 1b8a44f6-c160-44e0-a40f-5824c2687017); the
+    // blocks below are the Applied entry in docs/pending-rules.md, verbatim.
+    // hp_availabilitySettings is keyed by uid, one doc per host, so its owner
+    // check is on the document id, not an ownerUid field. Do not fold it into
+    // the hpOwns() shape: the id IS the owner, and no buggy write can produce
+    // a document whose id and owner disagree in a way the rule would accept.
+    match /hp_availabilitySettings/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /hp_friendLinks/{linkId} {
+      allow read: if hpOwns();
+      allow create: if hpOwnsNew();
+      allow update, delete: if hpOwns();
+    }
+
+    match /hp_bookings/{bookingId} {
+      allow read: if hpOwns();
+      allow create: if hpOwnsNew();
+      allow update, delete: if hpOwns();
+    }
+
+    match /hp_huddles/{huddleId} {
+      allow read: if hpOwns();
+      allow create: if hpOwnsNew();
+      allow update, delete: if hpOwns();
     }
 
     // Mirrors the shared ruleset's default deny for everything unmatched.
