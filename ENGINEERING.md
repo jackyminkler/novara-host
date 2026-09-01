@@ -404,6 +404,27 @@ find the process. On a mount that cannot delete files, move it aside instead
 and delete the moved copy later from a shell that can. Worktrees carry their own locks —
 check `.git/worktrees/*/index.lock` too.
 
+### Never remove a worktree without `git status` first
+
+**A worktree is the one place work can exist in no ref at all.** Before removing one —
+by hand, or in any cleanup pass — run `git -C <worktree> status --porcelain`. Non-empty
+output means stop, and report it rather than deleting it.
+
+This is not defensive habit, it is a near miss. On 2026-09-01 a worktree that looked
+stale, on a branch whose only commit already existed on a second branch, held 206
+uncommitted lines: a runtime fix, its tests, and a matching decision block. A scheduled
+cleanup was one run from destroying it.
+
+**Why nothing else catches this.** A branch audit reads refs. An inbox sweep reads
+committed files. `git log --all` searches commits. Uncommitted work appears in none of
+them, so every tool we have reports it as absent rather than at risk — and it had been
+reported as "never filed" on exactly that evidence. Only `git status`, in each worktree,
+sees it.
+
+The same asymmetry applies to the filing rules: "commit the decision block in the same
+commit as the code" fails silently when *nothing* gets committed. A block written and
+left uncommitted is indistinguishable, to every check, from a block never written.
+
 ---
 
 ## 7. Releases and rollback
