@@ -51,6 +51,31 @@ here. An entry in this file is the record that an invariant is currently guarded
 
 ---
 
+## Published renderings can drift from the docs they render
+
+### Nothing checks that an artifact still matches its source document
+- **What:** Two published artifacts render markdown that lives in this repo:
+  `Recurring_Event_Cycles_Flow_v1.md` and, in part, `Availability_Feature_Plan_v1.md` plus
+  `docs/adr/0001-one-solver-two-doors.md`. Each artifact states that the repo is canonical and
+  that the repo wins on disagreement. Nothing enforces it, so the next edit to any of those
+  files silently desyncs the published copy.
+- **Why it matters:** This already happened. Both artifacts carried a stale test count and one
+  carried a claim that nothing called the calendar writer, corrected on 2026-09-01 only because
+  someone re-read them side by side. A rendering that asserts it is faithful and is not is worse
+  than one that makes no claim, because the reader has been told to trust it.
+- **Why deferred:** The existing pattern (`scripts/eng/build_feature_handbook.py --check`, run
+  by the docs job in CI) works because the handbook is *generated* from its sources. These
+  artifacts are hand-authored renderings, not generated, so there is no build step to re-run and
+  diff. Closing this properly means either generating them, which loses the hand-designed
+  layout, or checking something weaker.
+- **Seam:** The cheap version is a front-matter stamp: record in each source doc the artifact
+  URL and the source's own content hash at last publish, and have the docs job fail when the
+  hash moves. That does not prove the artifact was updated correctly, only that somebody was
+  told to look, which is the failure mode that actually occurred here. The `--check` flag
+  convention and the docs job already exist to hang it on.
+
+---
+
 ## Host-repo gaps named elsewhere
 
 ### `ownerUid` isolation and the two-function guest model are guarded by prose
